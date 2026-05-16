@@ -1,0 +1,43 @@
+{
+  "name": "pianpian",
+  "version": "1.0.0",
+  "description": "A TypeScript autonomous multi-agent core with long-term memory.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "session": "npm run build && node dist/session-cli.js",
+    "session:once": "npm run build && node dist/session-cli.js --once",
+    "desktop": "npm run build && electron --no-sandbox --disable-gpu --disable-gpu-compositing --disable-gpu-sandbox dist/desktop/main.js",
+    "demo": "npm run build && node dist/demo.js",
+    "active-demo": "npm run build && node dist/active-demo.js",
+    "consolidation-demo": "npm run build && node dist/consolidation-demo.js",
+    "llm-consolidation-demo": "npm run build && node dist/llm-consolidation-demo.js",
+    "entity-demo": "npm run build && node dist/entity-demo.js",
+    "entity-recall-demo": "npm run build && node dist/entity-recall-demo.js",
+    "intent-router-demo": "npm run build && node dist/intent-router-demo.js",
+    "memory-correction-demo": "npm run build && node dist/memory-correction-demo.js",
+    "memory-inspector-demo": "npm run build && node dist/memory-inspector-demo.js",
+    "memory-inspector-tool-demo": "npm run build && node dist/memory-inspector-tool-demo.js",
+    "maintenance-demo": "npm run build && node dist/maintenance-demo.js",
+    "self-model-demo": "npm run build && node dist/self-model-demo.js",
+    "policy-demo": "npm run build && node dist/policy-demo.js",
+    "actor-demo": "npm run build && node dist/actor-demo.js",
+    "tool-demo": "npm run build && node dist/tool-demo.js",
+    "tool-loop-demo": "npm run build && node dist/tool-loop-demo.js",
+    "codex-tool-demo": "npm run build && node dist/codex-tool-demo.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "electron": "^41.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
+  }
+}

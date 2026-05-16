@@ -1,0 +1,28 @@
+node_modules/
+dist/
+
+# Local runtime state
+data/
+.pianpian-desktop-profile/
+.codex-home/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
