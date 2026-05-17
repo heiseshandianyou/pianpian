@@ -1,4 +1,4 @@
-import { MemoryConsolidationEngine, MemoryStore } from "./index.js";
+import { MemoryConsolidationEngine, MemoryStore } from "../index.js";
 
 const memory = new MemoryStore("data/pianpian-llm-consolidation-demo.sqlite");
 const engine = new MemoryConsolidationEngine(memory, {

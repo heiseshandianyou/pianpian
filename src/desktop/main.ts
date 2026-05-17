@@ -87,6 +87,10 @@ function registerIpc(): void {
     const parsed = typeof limit === "number" && Number.isInteger(limit) ? limit : 12;
     return backendRequest(`/memories?limit=${Math.max(1, Math.min(parsed, 50))}`);
   });
+  ipcMain.handle("pianpian:autonomy", () => backendRequest("/autonomy"));
+  ipcMain.handle("pianpian:autonomy-start", () => backendRequest("/autonomy/start", { method: "POST" }));
+  ipcMain.handle("pianpian:autonomy-stop", () => backendRequest("/autonomy/stop", { method: "POST" }));
+  ipcMain.handle("pianpian:autonomy-heartbeat", () => backendRequest("/autonomy/heartbeat", { method: "POST" }));
 }
 
 async function backendRequest(path: string, init?: RequestInit): Promise<unknown> {
@@ -366,9 +370,30 @@ function renderHtml(): string {
       opacity: 0.72;
     }
 
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .small-button {
+      min-height: 36px;
+      border-radius: 12px;
+      padding: 0 10px;
+      font-size: 11px;
+      box-shadow: none;
+    }
+
+    .small-button.secondary {
+      color: var(--ink);
+      background: rgba(66, 107, 79, 0.14);
+      border: 1px solid var(--line);
+    }
+
     .side {
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto auto minmax(140px, 0.7fr) minmax(220px, 1.2fr);
       gap: 14px;
       padding: 16px;
     }
@@ -419,6 +444,12 @@ function renderHtml(): string {
       padding-right: 4px;
     }
 
+    .context-list {
+      overflow: auto;
+      max-height: 100%;
+      padding-right: 4px;
+    }
+
     .memory {
       border-left: 4px solid var(--gold);
       border-radius: 14px;
@@ -441,6 +472,14 @@ function renderHtml(): string {
       margin-top: 10px;
       color: var(--muted);
       font-size: 13px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--ink);
+      font: 800 12px/1.2 "Trebuchet MS", sans-serif;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
     }
 
     pre {
@@ -503,12 +542,27 @@ function renderHtml(): string {
         </div>
       </section>
       <section class="card">
+        <h2>Autonomy</h2>
+        <div id="autonomy" class="list"><div class="memory"><small>booting</small>Waiting for heartbeat state.</div></div>
+        <div class="button-row">
+          <button class="small-button secondary" id="autonomy-start" type="button">Start</button>
+          <button class="small-button secondary" id="autonomy-stop" type="button">Stop</button>
+          <button class="small-button" id="autonomy-now" type="button">Think</button>
+        </div>
+      </section>
+      <section class="card">
         <h2>Tool Output</h2>
         <div id="tools" class="list"><div class="memory"><small>idle</small>No tools yet.</div></div>
       </section>
       <section class="card">
         <h2>Recent Memory</h2>
         <div id="memories" class="list"></div>
+      </section>
+      <section class="card">
+        <h2>Current Context</h2>
+        <div id="context" class="context-list">
+          <div class="memory"><small>idle</small>No context yet.</div>
+        </div>
       </section>
     </aside>
   </div>
@@ -522,6 +576,11 @@ function renderHtml(): string {
     const agents = document.querySelector("#agents");
     const tools = document.querySelector("#tools");
     const memories = document.querySelector("#memories");
+    const contextPanel = document.querySelector("#context");
+    const autonomyPanel = document.querySelector("#autonomy");
+    const autonomyStart = document.querySelector("#autonomy-start");
+    const autonomyStop = document.querySelector("#autonomy-stop");
+    const autonomyNow = document.querySelector("#autonomy-now");
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -542,6 +601,8 @@ function renderHtml(): string {
         renderTools(result.tools);
         renderStats(result.stats);
         renderMemories(result.memories);
+        renderContext(result.context);
+        renderAutonomy(await window.pianpian.autonomy());
         if (Array.isArray(result.backgroundJobs) && result.backgroundJobs.length > 0) {
           setTimeout(refresh, 2500);
           setTimeout(refresh, 7000);
@@ -560,9 +621,33 @@ function renderHtml(): string {
       }
     });
 
+    autonomyStart.addEventListener("click", async () => {
+      renderAutonomy(await window.pianpian.startAutonomy());
+    });
+
+    autonomyStop.addEventListener("click", async () => {
+      renderAutonomy(await window.pianpian.stopAutonomy());
+    });
+
+    autonomyNow.addEventListener("click", async () => {
+      autonomyNow.disabled = true;
+      try {
+        const state = await window.pianpian.heartbeat();
+        renderAutonomy(state);
+        if (state.lastHeartbeat && state.lastHeartbeat.cycle) {
+          renderStats(state.lastHeartbeat.cycle.stats);
+          renderMemories(state.lastHeartbeat.cycle.memories);
+          renderContext(state.lastHeartbeat.cycle.context);
+        }
+      } finally {
+        autonomyNow.disabled = false;
+      }
+    });
+
     async function refresh() {
       renderStats(await window.pianpian.stats());
       renderMemories(await window.pianpian.memories(12));
+      renderAutonomy(await window.pianpian.autonomy());
     }
 
     function appendMessage(kind, text) {
@@ -603,6 +688,89 @@ function renderHtml(): string {
       }
     }
 
+
+    function renderAutonomy(state) {
+      autonomyPanel.innerHTML = "";
+      const status = state && state.status ? state.status : {};
+      const drive = status.lastDrive ? status.lastDrive.name : "none yet";
+      const last = status.lastCompletedAt ? new Date(status.lastCompletedAt).toLocaleTimeString() : "not yet";
+      const line = [
+        status.running ? "running" : "paused",
+        status.inFlight ? "thinking" : "idle",
+        "heartbeat " + Math.round((status.heartbeatMs || 0) / 1000) + "s",
+        "total " + (status.totalHeartbeats || 0),
+        "drive " + drive,
+        "last " + last,
+      ].join(" ? ");
+      autonomyPanel.appendChild(memoryNode(status.lastError ? "error" : "state", line));
+      if (state && state.lastHeartbeat) {
+        const cycle = state.lastHeartbeat.cycle;
+        const innerThought = cycle && Array.isArray(cycle.proposals)
+          ? cycle.proposals.find((proposal) => proposal.agentId === "proactive-scheduler") ||
+            cycle.proposals.find((proposal) => proposal.agentId === "proactive-intent") ||
+            cycle.proposals.find((proposal) => proposal.agentId === "desire-habit") ||
+            cycle.proposals.find((proposal) => proposal.agentId === "inner-life")
+          : undefined;
+        const reply = innerThought && innerThought.content
+          ? innerThought.content
+          : cycle && Array.isArray(cycle.replies) && cycle.replies.length > 0
+          ? cycle.replies.join("\\n")
+          : "No outward reply; she only updated inner memory.";
+        autonomyPanel.appendChild(memoryNode("last thought", reply));
+      }
+    }
+
+    function renderContext(context) {
+      contextPanel.innerHTML = "";
+      if (!context) {
+        contextPanel.appendChild(memoryNode("empty", "No context for this cycle."));
+        return;
+      }
+
+      const sections = [
+        ["Recall Plan", formatJson({
+          recallQuery: context.recallQuery,
+          activationTrace: context.activationTrace,
+          workingMemoryFrame: context.workingMemoryFrame,
+        })],
+        ["Current Task", context.currentTask],
+        ["Inner State", context.innerState],
+        ["Working Memory", context.workingMemory],
+        ["Relevant Entities", context.relevantEntities],
+        ["Self Model", context.selfModel],
+        ["Focus Memory", context.focus],
+        ["Active Goals", context.goals],
+        ["Preferences", context.preferences],
+        ["Long-Term Memory", context.longTermMemory],
+        ["Uncertainty", context.uncertainty],
+        ["Recent Evidence", context.recentEvidence],
+        ["Context Trace", formatJson(context.trace)],
+        ["Full Prompt", context.prompt],
+      ];
+
+      for (const [label, text] of sections) {
+        contextPanel.appendChild(detailNode(label, text || "None."));
+      }
+    }
+
+    function detailNode(label, text) {
+      const node = document.createElement("details");
+      if (label === "Recall Plan" || label === "Self Model" || label === "Focus Memory") {
+        node.open = true;
+      }
+      const summary = document.createElement("summary");
+      summary.textContent = label;
+      const pre = document.createElement("pre");
+      pre.textContent = String(text);
+      node.appendChild(summary);
+      node.appendChild(pre);
+      return node;
+    }
+
+    function formatJson(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
     function memoryNode(label, text) {
       const node = document.createElement("div");
       node.className = "memory";
@@ -616,6 +784,7 @@ function renderHtml(): string {
     }
 
     refresh();
+    setInterval(refresh, 15000);
   </script>
 </body>
 </html>`;

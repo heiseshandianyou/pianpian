@@ -1,5 +1,6 @@
 import http from "node:http";
-import { AutonomousRuntime, MemoryStore } from "../index.js";
+import { ActiveAgentHost, AutonomousRuntime, MemoryStore } from "../index.js";
+import type { HeartbeatResult } from "../runtime/active-agent-host.js";
 import type { RuntimeCycleResult } from "../runtime/autonomous-runtime.js";
 
 const memory = new MemoryStore(process.env.PIANPIAN_MEMORY_PATH ?? "data/pianpian-memory.sqlite");
@@ -8,7 +9,18 @@ const runtime = new AutonomousRuntime(memory, undefined, {
   useLlmForMemoryFormation: process.env.PIANPIAN_MEMORY_LLM !== "0",
   useLlmForCompanion: process.env.PIANPIAN_COMPANION_LLM !== "0",
   asyncMemoryFormation: process.env.PIANPIAN_SYNC_MEMORY !== "1",
+  trustAutonomousActions: process.env.PIANPIAN_AUTONOMY_TRUST !== "0",
 });
+const activeHost = new ActiveAgentHost(runtime, memory, {
+  heartbeatMs: parseHeartbeatMs(process.env.PIANPIAN_HEARTBEAT_MS),
+});
+let lastHeartbeat: HeartbeatResult | undefined;
+
+if (process.env.PIANPIAN_AUTONOMY !== "0") {
+  activeHost.start((result) => {
+    lastHeartbeat = result;
+  });
+}
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -29,12 +41,35 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, { error: "Input cannot be empty." }, 400);
       }
 
+      activeHost.markUserActivity();
       const startedAt = Date.now();
       const result = await runtime.step(input);
       return sendJson(response, {
         ...toDesktopCycle(result),
         durationMs: Date.now() - startedAt,
       });
+    }
+
+    if (request.method === "GET" && request.url === "/autonomy") {
+      return sendJson(response, autonomyPayload());
+    }
+
+    if (request.method === "POST" && request.url === "/autonomy/start") {
+      activeHost.start((result) => {
+        lastHeartbeat = result;
+      });
+      return sendJson(response, autonomyPayload());
+    }
+
+    if (request.method === "POST" && request.url === "/autonomy/stop") {
+      activeHost.stop();
+      return sendJson(response, autonomyPayload());
+    }
+
+    if (request.method === "POST" && request.url === "/autonomy/heartbeat") {
+      const result = await activeHost.heartbeat();
+      lastHeartbeat = result;
+      return sendJson(response, autonomyPayload());
     }
 
     if (request.method === "POST" && request.url === "/shutdown") {
@@ -93,10 +128,61 @@ function toDesktopCycle(result: RuntimeCycleResult) {
       agentId: proposal.agentId,
       intent: proposal.intent,
       confidence: proposal.confidence,
+      content: proposal.content,
     })),
     backgroundJobs: result.backgroundJobs,
+    actions: result.actions.map((action) => ({
+      type: action.type,
+      content: action.content,
+      metadata: action.metadata,
+    })),
+    executionResults: result.executionResults.map((item) => ({
+      action: {
+        type: item.action.type,
+        content: item.action.content,
+        metadata: item.action.metadata,
+      },
+      status: item.status,
+      output: item.output,
+      error: item.error,
+      createdAt: item.createdAt,
+      metadata: item.metadata,
+    })),
     stats: memory.stats(),
     memories: memory.list(12),
+    context: {
+      currentTask: result.compiledContext.currentTask,
+      innerState: result.compiledContext.innerState,
+      workingMemory: result.compiledContext.workingMemory,
+      relevantEntities: result.compiledContext.relevantEntities,
+      selfModel: result.compiledContext.selfModel,
+      focus: result.compiledContext.focus,
+      goals: result.compiledContext.goals,
+      preferences: result.compiledContext.preferences,
+      longTermMemory: result.compiledContext.longTermMemory,
+      uncertainty: result.compiledContext.uncertainty,
+      recentEvidence: result.compiledContext.recentEvidence,
+      prompt: result.compiledContext.prompt,
+      trace: result.compiledContext.trace,
+      recallQuery: result.activatedMemory.query,
+      activationTrace: result.activatedMemory.activationTrace,
+      workingMemoryFrame: result.workingMemory,
+    },
+  };
+}
+
+function autonomyPayload() {
+  return {
+    status: activeHost.status(),
+    lastHeartbeat: lastHeartbeat
+      ? {
+          drive: lastHeartbeat.drive,
+          cycle: toDesktopCycle(lastHeartbeat.cycle),
+          maintenance: lastHeartbeat.maintenance,
+          consolidation: lastHeartbeat.consolidation,
+          forgetting: lastHeartbeat.forgetting,
+        }
+      : undefined,
   };
 }
 
@@ -124,7 +210,16 @@ function clampLimit(value: number): number {
   return Math.min(value, 50);
 }
 
+function parseHeartbeatMs(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 60_000;
+  }
+  return Math.max(10_000, Math.min(Math.trunc(parsed), 10 * 60_000));
+}
+
 function shutdown(): void {
+  activeHost.stop();
   server.close(() => {
     memory.close();
     process.exit(0);

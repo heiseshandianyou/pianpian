@@ -66,7 +66,7 @@ function agentsForMode(mode: TaskMode): AgentId[] {
   }
 
   if (mode === "autonomous-maintenance") {
-    return ["memory-curator", "self-model", "planner", "reflector", "companion"];
+    return ["memory-curator", "self-model", "associator", "inner-life", "desire-habit", "proactive-intent", "proactive-scheduler", "planner", "reflector", "companion"];
   }
 
   return memoryAndCompanion;

@@ -1,4 +1,6 @@
 import { nowIso } from "../utils/id.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { ToolRegistry } from "../tools/tool-registry.js";
 import type { AgentAction, ActionExecutionResult, PolicyDecision, ToolContext } from "../types.js";
 
@@ -66,6 +68,27 @@ export class ActionExecutor {
         return executed(action, result.output, {
           toolName: result.toolName,
           toolMetadata: result.metadata,
+        });
+      }
+
+      if (action.type === "file-write") {
+        const targetPath = typeof action.metadata?.path === "string" ? action.metadata.path : "";
+        const baseDir = context.project?.cwd ?? process.cwd();
+        const resolved = resolve(baseDir, targetPath);
+        const relation = relative(baseDir, resolved);
+        if (!targetPath || relation === "" || relation.startsWith("..") || isAbsolute(relation)) {
+          return {
+            action,
+            status: "skipped",
+            output: "File write skipped: target path must stay inside the project workspace.",
+            createdAt: nowIso(),
+          };
+        }
+
+        await mkdir(dirname(resolved), { recursive: true });
+        await writeFile(resolved, action.content, "utf8");
+        return executed(action, `Wrote file: ${resolved}`, {
+          path: resolved,
         });
       }
 

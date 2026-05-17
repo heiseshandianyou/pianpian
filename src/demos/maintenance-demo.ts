@@ -1,4 +1,4 @@
-import { ActiveAgentHost, AutonomousRuntime, MemoryStore } from "./index.js";
+import { ActiveAgentHost, AutonomousRuntime, MemoryStore } from "../index.js";
 
 const memory = new MemoryStore("data/pianpian-maintenance-demo.sqlite");
 const runtime = new AutonomousRuntime(memory);

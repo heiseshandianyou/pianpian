@@ -1,5 +1,5 @@
-import { ActionExecutor, ActionGate } from "./index.js";
-import type { AgentAction } from "./index.js";
+import { ActionExecutor, ActionGate } from "../index.js";
+import type { AgentAction } from "../index.js";
 
 const actions: AgentAction[] = [
   {

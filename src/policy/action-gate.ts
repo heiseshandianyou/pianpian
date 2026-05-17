@@ -1,8 +1,13 @@
 import { PolicyAgent } from "../agents/policy-agent.js";
+import type { PolicyAgentOptions } from "../agents/policy-agent.js";
 import type { AgentAction, PolicyDecision } from "../types.js";
 
 export class ActionGate {
-  constructor(private readonly policy = new PolicyAgent()) {}
+  constructor(policy?: PolicyAgent, options: PolicyAgentOptions = {}) {
+    this.policy = policy ?? new PolicyAgent(undefined, options);
+  }
+
+  private readonly policy: PolicyAgent;
 
   review(actions: AgentAction[]): PolicyDecision[] {
     return actions.map((action) => this.policy.review(action));

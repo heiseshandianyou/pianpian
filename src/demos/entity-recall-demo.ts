@@ -1,4 +1,4 @@
-import { AutonomousRuntime, MemoryStore } from "./index.js";
+import { AutonomousRuntime, MemoryStore } from "../index.js";
 
 const memory = new MemoryStore(":memory:");
 const runtime = new AutonomousRuntime(memory, undefined, {

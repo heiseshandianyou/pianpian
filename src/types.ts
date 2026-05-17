@@ -6,6 +6,11 @@ export type AgentId =
   | "policy"
   | "planner"
   | "reflector"
+  | "associator"
+  | "inner-life"
+  | "desire-habit"
+  | "proactive-intent"
+  | "proactive-scheduler"
   | "tool-reflector"
   | "actor"
   | "companion";
@@ -96,8 +101,10 @@ export interface AgentContext {
   cycle: number;
   perception: Perception;
   route?: IntentRoute;
+  innerState?: InnerState;
   memories: MemoryRecord[];
   activatedMemory?: ActivatedMemoryGraph;
+  workingMemory?: WorkingMemoryFrame;
   compiledContext?: CompiledContext;
   scratchpad: Record<string, unknown>;
 }
@@ -286,9 +293,28 @@ export interface MaintenanceReport {
   forgetting?: ForgettingReport;
 }
 
+export type InnerMood = "quiet" | "curious" | "tender" | "focused" | "restless" | "protective";
+
+export interface InnerState {
+  mood: InnerMood;
+  arousal: number;
+  socialNeed: number;
+  curiosity: number;
+  continuityNeed: number;
+  dominantDrives: string[];
+  recallBiasTags: string[];
+  note: string;
+  updatedAt: string;
+}
+
 export interface RecallQuery {
   rawInput: string;
   taskIntent: string;
+  expandedQueries: string[];
+  explicitTopicTerms: string[];
+  priorityTags: string[];
+  priorityKinds: MemoryKind[];
+  queryPlanReason: string;
   seedLimit: number;
   entityLimit: number;
   entitySeedLimit: number;
@@ -328,6 +354,36 @@ export interface ActivatedMemoryGraph {
   activationTrace: ActivationTrace[];
 }
 
+export type WorkingMemorySection =
+  | "topic"
+  | "identity"
+  | "relationship"
+  | "goals"
+  | "preferences"
+  | "procedures"
+  | "evidence"
+  | "background";
+
+export type TopicSubchannel = "history" | "food" | "route" | "promise" | "general";
+
+export interface WorkingMemorySlot {
+  section: WorkingMemorySection;
+  topicSubchannel?: TopicSubchannel;
+  node: ActivatedMemoryNode;
+  score: number;
+  reasons: string[];
+}
+
+export interface WorkingMemoryFrame {
+  topicTerms: string[];
+  slots: WorkingMemorySlot[];
+  excluded: Array<{
+    memoryId: string;
+    reason: string;
+  }>;
+  summary: string;
+}
+
 export interface ContextTrace {
   memoryId?: string;
   section: string;
@@ -337,6 +393,8 @@ export interface ContextTrace {
 
 export interface CompiledContext {
   currentTask: string;
+  innerState: string;
+  workingMemory: string;
   relevantEntities: string;
   selfModel: string;
   focus: string;

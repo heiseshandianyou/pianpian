@@ -5,6 +5,7 @@ import type {
   ActivatedMemoryNode,
   ActivationTrace,
   EntityRecord,
+  MemoryKind,
   MemoryEdgeRecord,
   MemoryRecord,
   MemoryRelation,
@@ -18,6 +19,11 @@ export class MemoryActivationEngine {
     const query: RecallQuery = {
       rawInput: input,
       taskIntent: overrides.taskIntent ?? inferTaskIntent(input),
+      expandedQueries: overrides.expandedQueries ?? [input],
+      explicitTopicTerms: overrides.explicitTopicTerms ?? [],
+      priorityTags: overrides.priorityTags ?? [],
+      priorityKinds: overrides.priorityKinds ?? [],
+      queryPlanReason: overrides.queryPlanReason ?? "No recall query plan was provided.",
       seedLimit: overrides.seedLimit ?? 8,
       entityLimit: overrides.entityLimit ?? 6,
       entitySeedLimit: overrides.entitySeedLimit ?? 12,
@@ -25,15 +31,38 @@ export class MemoryActivationEngine {
       maxNodes: overrides.maxNodes ?? 16,
     };
 
-    const textSeeds = this.memory.retrieve(query.rawInput, query.seedLimit);
-    const identitySeeds = isIdentityQuery(query.rawInput)
+    const recallText = [query.rawInput, ...query.expandedQueries].join(" ");
+    const textSeeds = dedupeMemories(
+      query.expandedQueries.flatMap((expandedQuery) => this.memory.retrieve(expandedQuery, query.seedLimit)),
+    ).slice(0, query.seedLimit * 2);
+    const topicSeeds =
+      query.explicitTopicTerms.length > 0
+        ? this.memory
+            .listActive(700)
+            .map((memory) => ({
+              memory,
+              score: memoryTopicMatchScore(memory, [...query.explicitTopicTerms, ...query.expandedQueries]),
+            }))
+            .filter((item) => item.score > 0)
+            .sort((left, right) => right.score - left.score)
+            .map((item) => item.memory)
+            .slice(0, query.seedLimit * 2)
+        : [];
+    const prioritySeeds =
+      query.priorityTags.length > 0 || query.priorityKinds.length > 0
+        ? this.memory
+            .listActive(500)
+            .filter((memory) => memoryMatchesPriority(memory, query.priorityTags, query.priorityKinds))
+            .slice(0, Math.max(4, query.seedLimit))
+        : [];
+    const identitySeeds = isIdentityQuery(recallText)
       ? this.memory
           .listActive(300)
           .filter(isIdentityMemory)
           .slice(0, 8)
       : [];
     const pinnedSeeds = this.memory.listPinnedActive(8);
-    const matchedEntities = this.memory.findEntitiesMentionedInText(query.rawInput, query.entityLimit);
+    const matchedEntities = this.memory.findEntitiesMentionedInText(recallText, query.entityLimit);
     const entitySeeds = this.memory.listActiveMemoriesForEntityIds(
       matchedEntities.map((entity) => entity.id),
       query.entitySeedLimit,
@@ -52,6 +81,26 @@ export class MemoryActivationEngine {
         toMemoryId: seed.id,
         amount,
         reason: "Seed memory matched the current recall query.",
+      });
+    }
+
+    for (const seed of topicSeeds) {
+      const amount = Math.max(0.78, seedActivation(seed) * 0.98);
+      addActivation(activation, seed, amount, 0, "explicit-topic lexical memory");
+      trace.push({
+        toMemoryId: seed.id,
+        amount,
+        reason: "Memory directly matched explicit topic terms from the current input.",
+      });
+    }
+
+    for (const seed of prioritySeeds) {
+      const amount = Math.max(0.74, seedActivation(seed) * 0.96);
+      addActivation(activation, seed, amount, 0, "recall-plan priority memory");
+      trace.push({
+        toMemoryId: seed.id,
+        amount,
+        reason: "Memory matched priority tags or kinds from the recall query plan.",
       });
     }
 
@@ -85,7 +134,9 @@ export class MemoryActivationEngine {
       });
     }
 
-    let frontier = [...new Set([...textSeeds, ...identitySeeds, ...entitySeeds, ...pinnedSeeds].map((seed) => seed.id))];
+    let frontier = [
+      ...new Set([...textSeeds, ...topicSeeds, ...prioritySeeds, ...identitySeeds, ...entitySeeds, ...pinnedSeeds].map((seed) => seed.id)),
+    ];
     for (let depth = 1; depth <= query.maxDepth; depth += 1) {
       if (frontier.length === 0) {
         break;
@@ -176,6 +227,36 @@ export class MemoryActivationEngine {
       activationTrace: trace.sort((left, right) => right.amount - left.amount).slice(0, 50),
     };
   }
+}
+
+function dedupeMemories(memories: MemoryRecord[]): MemoryRecord[] {
+  const byId = new Map<string, MemoryRecord>();
+  for (const memory of memories) {
+    if (!byId.has(memory.id)) {
+      byId.set(memory.id, memory);
+    }
+  }
+  return [...byId.values()];
+}
+
+function memoryMatchesPriority(memory: MemoryRecord, tags: string[], kinds: MemoryKind[]): boolean {
+  const normalizedTags = new Set(tags.map((tag) => tag.toLowerCase()));
+  return (
+    kinds.includes(memory.kind) ||
+    memory.tags.some((tag) => normalizedTags.has(tag.toLowerCase()))
+  );
+}
+
+function memoryTopicMatchScore(memory: MemoryRecord, topicTerms: string[]): number {
+  const text = `${memory.text} ${memory.tags.join(" ")}`.toLowerCase();
+  let score = 0;
+  for (const term of topicTerms) {
+    const normalized = term.trim().toLowerCase();
+    if (normalized.length >= 2 && text.includes(normalized)) {
+      score += Math.min(3, normalized.length / 2);
+    }
+  }
+  return score;
 }
 
 function addActivation(
@@ -286,6 +367,11 @@ function isIdentityQuery(input: string): boolean {
     "你叫什么",
     "我的名字",
     "你的名字",
+    "名字",
+    "本名",
+    "艺名",
+    "身份",
+    "认同",
     "who am i",
     "who are you",
     "what is my name",
@@ -295,7 +381,7 @@ function isIdentityQuery(input: string): boolean {
 
 function isIdentityMemory(memory: MemoryRecord): boolean {
   const text = memory.text.toLowerCase();
-  if (memory.tags.some((tag) => ["identity", "name"].includes(tag))) {
+  if (memory.tags.some((tag) => ["identity", "name", "self", "self-model", "temperament"].includes(tag))) {
     return true;
   }
 
@@ -304,6 +390,8 @@ function isIdentityMemory(memory: MemoryRecord): boolean {
     "静涵",
     "林悔儿",
     "林翩翩",
+    "翩翩",
+    "悔儿",
     "the user's name is",
     "pianpian's chosen name is",
     "我是卢静涵",

@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { AutonomousRuntime, MemoryStore } from "./index.js";
+import { AutonomousRuntime, MemoryStore } from "../index.js";
 
 mkdirSync("data", { recursive: true });
 

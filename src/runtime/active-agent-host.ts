@@ -25,6 +25,19 @@ export interface HeartbeatResult {
   forgetting?: ForgettingReport;
 }
 
+export interface ActiveAgentHostStatus {
+  running: boolean;
+  heartbeatMs: number;
+  idleCycles: number;
+  totalHeartbeats: number;
+  inFlight: boolean;
+  lastStartedAt?: string;
+  lastCompletedAt?: string;
+  lastDrive?: AutonomyDrive;
+  lastCycle?: number;
+  lastError?: string;
+}
+
 const defaultOptions: ActiveAgentHostOptions = {
   heartbeatMs: 60_000,
   consolidationEveryCycles: 6,
@@ -42,6 +55,12 @@ export class ActiveAgentHost {
   private timer?: NodeJS.Timeout;
   private idleCycles = 0;
   private totalHeartbeats = 0;
+  private inFlight = false;
+  private lastStartedAt?: string;
+  private lastCompletedAt?: string;
+  private lastDrive?: AutonomyDrive;
+  private lastCycle?: number;
+  private lastError?: string;
   private readonly drives = new DriveSystem();
   private readonly consolidation: MemoryConsolidationEngine;
   private readonly options: ActiveAgentHostOptions;
@@ -68,7 +87,7 @@ export class ActiveAgentHost {
     }
 
     this.timer = setInterval(() => {
-      void this.heartbeat().then(onHeartbeat);
+      void this.heartbeat().then(onHeartbeat).catch(() => undefined);
     }, this.options.heartbeatMs);
   }
 
@@ -82,43 +101,76 @@ export class ActiveAgentHost {
   }
 
   async heartbeat(): Promise<HeartbeatResult> {
+    if (this.inFlight) {
+      throw new Error("Autonomous heartbeat is already running.");
+    }
+
+    this.inFlight = true;
+    this.lastStartedAt = new Date().toISOString();
+    this.lastError = undefined;
     this.idleCycles += 1;
     this.totalHeartbeats += 1;
 
-    const memories = this.memory.list(40).filter((memory) => memory.status === "active");
-    const drive = this.drives.chooseNext(memories, this.idleCycles);
-    const cycle = await this.runtime.step(
-      `Internal heartbeat: ${drive.name}. ${drive.prompt}`,
-      "internal",
-    );
+    try {
+      const memories = this.memory.list(40).filter((memory) => memory.status === "active");
+      const drive = this.drives.chooseNext(memories, this.idleCycles);
+      this.lastDrive = drive;
+      const cycle = await this.runtime.step(
+        `Internal heartbeat: ${drive.name}. ${drive.prompt}`,
+        "internal",
+      );
+      this.lastCycle = cycle.cycle;
 
-    const consolidation =
-      this.shouldRunEvery(this.options.consolidationEveryCycles) || drive.id === "consolidate-memory"
-        ? this.consolidation.consolidateExactDuplicates()
+      const consolidation =
+        this.shouldRunEvery(this.options.consolidationEveryCycles) || drive.id === "consolidate-memory"
+          ? this.consolidation.consolidateExactDuplicates()
+          : undefined;
+      const relatedConsolidation = this.shouldRunEvery(this.options.relatedConsolidationEveryCycles)
+        ? await this.consolidation.consolidateRelatedMemories()
         : undefined;
-    const relatedConsolidation = this.shouldRunEvery(this.options.relatedConsolidationEveryCycles)
-      ? await this.consolidation.consolidateRelatedMemories()
-      : undefined;
-    const forgetting =
-      this.shouldRunEvery(this.options.forgettingEveryCycles)
-        ? this.memory.applyForgetting(this.options.forgettingPolicy)
-        : undefined;
-    const maintenance: MaintenanceReport = {
-      consolidation: mergeConsolidationReports(consolidation, relatedConsolidation),
-      forgetting,
-    };
+      const forgetting =
+        this.shouldRunEvery(this.options.forgettingEveryCycles)
+          ? this.memory.applyForgetting(this.options.forgettingPolicy)
+          : undefined;
+      const maintenance: MaintenanceReport = {
+        consolidation: mergeConsolidationReports(consolidation, relatedConsolidation),
+        forgetting,
+      };
 
-    return {
-      drive,
-      cycle,
-      maintenance,
-      consolidation: maintenance.consolidation,
-      forgetting,
-    };
+      this.lastCompletedAt = new Date().toISOString();
+      return {
+        drive,
+        cycle,
+        maintenance,
+        consolidation: maintenance.consolidation,
+        forgetting,
+      };
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      this.lastCompletedAt = new Date().toISOString();
+      throw error;
+    } finally {
+      this.inFlight = false;
+    }
   }
 
   markUserActivity(): void {
     this.idleCycles = 0;
+  }
+
+  status(): ActiveAgentHostStatus {
+    return {
+      running: this.timer !== undefined,
+      heartbeatMs: this.options.heartbeatMs,
+      idleCycles: this.idleCycles,
+      totalHeartbeats: this.totalHeartbeats,
+      inFlight: this.inFlight,
+      lastStartedAt: this.lastStartedAt,
+      lastCompletedAt: this.lastCompletedAt,
+      lastDrive: this.lastDrive,
+      lastCycle: this.lastCycle,
+      lastError: this.lastError,
+    };
   }
 
   private shouldRunEvery(cycles: number): boolean {

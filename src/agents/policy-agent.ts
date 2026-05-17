@@ -1,11 +1,18 @@
 import { ToolRegistry } from "../tools/tool-registry.js";
 import type { Agent, AgentAction, AgentContext, AgentProposal, PolicyDecision } from "../types.js";
 
+export interface PolicyAgentOptions {
+  trustAutonomousActions?: boolean;
+}
+
 export class PolicyAgent implements Agent {
   readonly id = "policy" as const;
   readonly role = "Classifies action risk and enforces confirmation gates.";
 
-  constructor(private readonly tools = new ToolRegistry()) {}
+  constructor(
+    private readonly tools = new ToolRegistry(),
+    private readonly options: PolicyAgentOptions = {},
+  ) {}
 
   async run(_context: AgentContext): Promise<AgentProposal> {
     return {
@@ -39,6 +46,7 @@ export class PolicyAgent implements Agent {
       const toolName = typeof action.metadata?.toolName === "string" ? action.metadata.toolName : undefined;
       const risk = toolName ? this.tools.riskOf(toolName) : undefined;
       const confirmed = action.metadata?.confirmed === true;
+      const trustedAutonomous = this.isTrustedAutonomousAction(action);
 
       if (risk === "safe") {
         return {
@@ -49,12 +57,14 @@ export class PolicyAgent implements Agent {
         };
       }
 
-      if (confirmed && (risk === "medium" || risk === "high")) {
+      if ((confirmed || trustedAutonomous) && (risk === "medium" || risk === "high")) {
         return {
           action,
           risk,
           status: "allow",
-          reason: `Tool '${toolName}' was explicitly confirmed and may run.`,
+          reason: confirmed
+            ? `Tool '${toolName}' was explicitly confirmed and may run.`
+            : `Tool '${toolName}' is allowed by autonomous trust mode.`,
         };
       }
 
@@ -69,6 +79,15 @@ export class PolicyAgent implements Agent {
     }
 
     if (action.type === "file-write") {
+      if (this.isTrustedAutonomousAction(action)) {
+        return {
+          action,
+          risk: "medium",
+          status: "allow",
+          reason: "Autonomous trust mode allows bounded workspace file writes.",
+        };
+      }
+
       return {
         action,
         risk: "medium",
@@ -92,5 +111,13 @@ export class PolicyAgent implements Agent {
       status: "block",
       reason: "Unknown action type is blocked by default.",
     };
+  }
+
+  private isTrustedAutonomousAction(action: AgentAction): boolean {
+    return (
+      this.options.trustAutonomousActions === true &&
+      action.metadata?.autonomous === true &&
+      action.metadata?.trusted === true
+    );
   }
 }

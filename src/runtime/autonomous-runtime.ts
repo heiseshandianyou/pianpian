@@ -1,10 +1,15 @@
 import { ActorAgent } from "../agents/actor-agent.js";
+import { AutonomousAssociationAgent } from "../agents/autonomous-association-agent.js";
 import { CompanionAgent } from "../agents/companion-agent.js";
+import { DesireHabitAgent } from "../agents/desire-habit-agent.js";
 import { DirectorAgent } from "../agents/director-agent.js";
+import { InnerLifeAgent } from "../agents/inner-life-agent.js";
 import { MemoryCorrectionAgent } from "../agents/memory-correction-agent.js";
 import { MemoryFormationAgent } from "../agents/memory-formation-agent.js";
 import { PlannerAgent } from "../agents/planner-agent.js";
 import { PolicyAgent } from "../agents/policy-agent.js";
+import { ProactiveIntentAgent } from "../agents/proactive-intent-agent.js";
+import { ProactiveSchedulerAgent } from "../agents/proactive-scheduler-agent.js";
 import { ReflectorAgent } from "../agents/reflector-agent.js";
 import { SelfModelAgent } from "../agents/self-model-agent.js";
 import { ToolResultReflectionAgent } from "../agents/tool-result-reflection-agent.js";
@@ -15,8 +20,11 @@ import { createDefaultDeepSeekClient } from "../llm/deepseek-client.js";
 import type { LlmProvider } from "../llm/types.js";
 import { MemoryActivationEngine } from "../memory/memory-activation-engine.js";
 import { MemoryInspector } from "../memory/memory-inspector.js";
+import { RecallQueryAgent } from "../memory/recall-query-agent.js";
 import { MemoryStore } from "../memory/memory-store.js";
+import { WorkingMemoryGate } from "../memory/working-memory-gate.js";
 import { ActionGate } from "../policy/action-gate.js";
+import { InnerStateEngine } from "./inner-state-engine.js";
 import { IntentRouter } from "./intent-router.js";
 import { nowIso } from "../utils/id.js";
 import type {
@@ -32,6 +40,7 @@ import type {
   MemoryRecord,
   Perception,
   PolicyDecision,
+  WorkingMemoryFrame,
 } from "../types.js";
 
 export interface RuntimeCycleResult {
@@ -39,6 +48,7 @@ export interface RuntimeCycleResult {
   perception: Perception;
   route: IntentRoute;
   activatedMemory: ActivatedMemoryGraph;
+  workingMemory: WorkingMemoryFrame;
   compiledContext: CompiledContext;
   proposals: AgentProposal[];
   policyDecisions: PolicyDecision[];
@@ -64,6 +74,7 @@ export interface AutonomousRuntimeOptions {
   useLlmForMemoryFormation?: boolean;
   useLlmForCompanion?: boolean;
   asyncMemoryFormation?: boolean;
+  trustAutonomousActions?: boolean;
 }
 
 export class AutonomousRuntime {
@@ -71,15 +82,19 @@ export class AutonomousRuntime {
   private readonly director = new DirectorAgent();
   private readonly agents: Map<AgentId, Agent>;
   private readonly router = new IntentRouter();
+  private readonly innerStateEngine = new InnerStateEngine();
+  private readonly recallQueryAgent = new RecallQueryAgent();
   private readonly activationEngine: MemoryActivationEngine;
+  private readonly workingMemoryGate = new WorkingMemoryGate();
   private readonly contextCompiler = new ContextCompiler();
   private readonly memoryInspector: MemoryInspector;
-  private readonly actionGate = new ActionGate();
+  private readonly actionGate: ActionGate;
   private readonly actionExecutor = new ActionExecutor();
   private readonly toolResultReflection = new ToolResultReflectionAgent();
   private readonly scratchpad: Record<string, unknown> = {};
   private readonly asyncMemoryFormation: boolean;
   private readonly backgroundJobs: RuntimeBackgroundJob[] = [];
+  private stepQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly memory: MemoryStore,
@@ -97,6 +112,9 @@ export class AutonomousRuntime {
     const memoryFormationLlm = options.useLlmForMemoryFormation === false ? undefined : llm;
     const companionLlm = options.useLlmForCompanion === false ? undefined : llm;
     this.asyncMemoryFormation = options.asyncMemoryFormation ?? false;
+    this.actionGate = new ActionGate(undefined, {
+      trustAutonomousActions: options.trustAutonomousActions ?? false,
+    });
     this.activationEngine = new MemoryActivationEngine(memory);
     this.memoryInspector = new MemoryInspector(memory);
 
@@ -109,6 +127,11 @@ export class AutonomousRuntime {
         new ActorAgent(),
         new PlannerAgent(),
         new ReflectorAgent(),
+        new AutonomousAssociationAgent(),
+        new InnerLifeAgent(),
+        new DesireHabitAgent(),
+        new ProactiveIntentAgent(),
+        new ProactiveSchedulerAgent(),
         new CompanionAgent(companionLlm),
       ].map((agent) => [agent.id, agent]),
     );
@@ -119,6 +142,15 @@ export class AutonomousRuntime {
   }
 
   async step(input: string, source: Perception["source"] = "user"): Promise<RuntimeCycleResult> {
+    const run = this.stepQueue.then(() => this.runStep(input, source));
+    this.stepQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async runStep(input: string, source: Perception["source"]): Promise<RuntimeCycleResult> {
     this.cycle += 1;
     const perception: Perception = {
       source,
@@ -132,18 +164,22 @@ export class AutonomousRuntime {
     });
 
     const route = this.router.route(perception);
-    let activatedMemory = this.activationEngine.recall(input);
+    const innerState = this.innerStateEngine.update(perception, route);
+    const recallQuery = this.recallQueryAgent.plan(perception, route, innerState);
+    let activatedMemory = this.activationEngine.recall(input, recallQuery);
+    let workingMemory = this.workingMemoryGate.select(activatedMemory, innerState);
     let memories = [
-      ...activatedMemory.focusNodes.map((node) => node.memory),
-      ...activatedMemory.supportNodes.map((node) => node.memory),
+      ...workingMemory.slots.map((slot) => slot.node.memory),
     ];
-    let compiledContext = this.contextCompiler.compile(activatedMemory);
+    let compiledContext = this.contextCompiler.compile(activatedMemory, innerState, workingMemory);
     let context: AgentContext = {
       cycle: this.cycle,
       perception,
       route,
+      innerState,
       memories,
       activatedMemory,
+      workingMemory,
       compiledContext,
       scratchpad: this.scratchpad,
     };
@@ -164,16 +200,17 @@ export class AutonomousRuntime {
     }
 
     if (syncMemoryProposals.length > 0) {
-      activatedMemory = this.activationEngine.recall(input);
+      activatedMemory = this.activationEngine.recall(input, recallQuery);
+      workingMemory = this.workingMemoryGate.select(activatedMemory, innerState);
       memories = [
-        ...activatedMemory.focusNodes.map((node) => node.memory),
-        ...activatedMemory.supportNodes.map((node) => node.memory),
+        ...workingMemory.slots.map((slot) => slot.node.memory),
       ];
-      compiledContext = this.contextCompiler.compile(activatedMemory);
+      compiledContext = this.contextCompiler.compile(activatedMemory, innerState, workingMemory);
       context = {
         ...context,
         memories,
         activatedMemory,
+        workingMemory,
         compiledContext,
       };
       foregroundAgents = foregroundAgents.filter((agent) => !syncMemoryAgents.includes(agent));
@@ -251,6 +288,7 @@ export class AutonomousRuntime {
       },
       compiledContext: {
         currentTask: compiledContext.currentTask,
+        workingMemory: workingMemory.summary,
         traceCount: compiledContext.trace.length,
       },
       route,
@@ -266,6 +304,7 @@ export class AutonomousRuntime {
       perception,
       route,
       activatedMemory,
+      workingMemory,
       compiledContext,
       proposals: allProposals,
       policyDecisions,

@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { MemoryConsolidationEngine, MemoryStore } from "./index.js";
+import { MemoryConsolidationEngine, MemoryStore } from "../index.js";
 
 mkdirSync("data", { recursive: true });
 

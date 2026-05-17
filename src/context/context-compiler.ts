@@ -3,7 +3,11 @@ import type {
   ActivatedMemoryNode,
   CompiledContext,
   ContextTrace,
+  InnerState,
   MemoryKind,
+  WorkingMemoryFrame,
+  WorkingMemorySection,
+  WorkingMemorySlot,
 } from "../types.js";
 
 export interface ContextCompilerOptions {
@@ -21,36 +25,60 @@ const defaultOptions: ContextCompilerOptions = {
 export class ContextCompiler {
   constructor(private readonly options: Partial<ContextCompilerOptions> = {}) {}
 
-  compile(graph: ActivatedMemoryGraph): CompiledContext {
+  compile(graph: ActivatedMemoryGraph, innerState?: InnerState, workingMemory?: WorkingMemoryFrame): CompiledContext {
     const options = { ...defaultOptions, ...this.options };
-    const nodes = dedupeNodes([...graph.focusNodes, ...graph.supportNodes]);
+    const nodes = workingMemory
+      ? workingMemory.slots.map((slot) => slot.node)
+      : dedupeNodes([...graph.focusNodes, ...graph.supportNodes]);
     const trace: ContextTrace[] = [];
 
     const relevantEntities = formatEntities(graph.entityNodes, trace);
-    const focus = takeSection(
-      nodes,
-      ["self_model", "goal", "semantic", "preference", "reflection", "episode"],
-      options.maxFocusItems,
-      "focus",
-      trace,
-    );
-    const selfModel = takeSection(nodes, ["self_model"], 6, "selfModel", trace);
-    const goals = takeSection(nodes, ["goal"], 5, "goals", trace);
-    const preferences = takeSection(nodes, ["preference"], 5, "preferences", trace);
-    const longTermMemory = takeSection(
-      nodes,
-      ["semantic", "reflection"],
-      options.maxLongTermItems,
-      "longTermMemory",
-      trace,
-    );
-    const recentEvidence = takeSection(
-      nodes,
-      ["episode"],
-      options.maxEvidenceItems,
-      "recentEvidence",
-      trace,
-    );
+    const focus = workingMemory
+      ? formatSlots(
+          slotsFor(workingMemory, ["topic", "relationship", "procedures", "goals"], options.maxFocusItems),
+          "focus",
+          trace,
+        )
+      : takeSection(
+          nodes,
+          ["self_model", "goal", "semantic", "preference", "reflection", "episode"],
+          options.maxFocusItems,
+          "focus",
+          trace,
+        );
+    const selfModel = workingMemory
+      ? formatSlots(slotsFor(workingMemory, ["identity"], 6), "selfModel", trace)
+      : takeSection(nodes, ["self_model"], 6, "selfModel", trace);
+    const goals = workingMemory
+      ? formatSlots(slotsFor(workingMemory, ["goals"], 5), "goals", trace)
+      : takeSection(nodes, ["goal"], 5, "goals", trace);
+    const preferences = workingMemory
+      ? formatSlots(slotsFor(workingMemory, ["preferences"], 5), "preferences", trace)
+      : takeSection(nodes, ["preference"], 5, "preferences", trace);
+    const longTermMemory = workingMemory
+      ? formatSlots(
+          slotsFor(workingMemory, ["topic", "background", "procedures"], options.maxLongTermItems).filter((slot) =>
+            ["semantic", "reflection", "procedure", "relationship"].includes(slot.node.memory.kind),
+          ),
+          "longTermMemory",
+          trace,
+        )
+      : takeSection(
+          nodes,
+          ["semantic", "reflection"],
+          options.maxLongTermItems,
+          "longTermMemory",
+          trace,
+        );
+    const recentEvidence = workingMemory
+      ? formatSlots(slotsFor(workingMemory, ["evidence"], options.maxEvidenceItems), "recentEvidence", trace)
+      : takeSection(
+          nodes,
+          ["episode"],
+          options.maxEvidenceItems,
+          "recentEvidence",
+          trace,
+        );
     const uncertainty =
       graph.contradictionNodes.length > 0
         ? formatNodes(graph.contradictionNodes, "uncertainty", trace)
@@ -58,6 +86,8 @@ export class ContextCompiler {
 
     const compiled: CompiledContext = {
       currentTask: graph.query.taskIntent,
+      innerState: formatInnerState(innerState),
+      workingMemory: formatWorkingMemoryFrame(workingMemory),
       relevantEntities,
       selfModel,
       focus,
@@ -128,6 +158,12 @@ function renderPrompt(context: Omit<CompiledContext, "prompt">): string {
     "[Current Task]",
     context.currentTask,
     "",
+    "[Inner State]",
+    context.innerState,
+    "",
+    "[Working Memory Gate]",
+    context.workingMemory,
+    "",
     "[Relevant Entities]",
     context.relevantEntities,
     "",
@@ -151,6 +187,97 @@ function renderPrompt(context: Omit<CompiledContext, "prompt">): string {
     "",
     "[Recent Evidence]",
     context.recentEvidence,
+  ].join("\n");
+}
+
+function slotsFor(
+  workingMemory: WorkingMemoryFrame,
+  sections: WorkingMemorySection[],
+  limit: number,
+): WorkingMemorySlot[] {
+  return workingMemory.slots.filter((slot) => sections.includes(slot.section)).slice(0, limit);
+}
+
+function formatSlots(slots: WorkingMemorySlot[], section: string, trace: ContextTrace[]): string {
+  if (slots.length === 0) {
+    return "None activated.";
+  }
+
+  for (const slot of slots) {
+    trace.push({
+      memoryId: slot.node.memory.id,
+      section,
+      reason: [`workingMemory=${slot.section}`, ...slot.reasons, ...slot.node.reasons].join("; "),
+      activation: slot.node.activation,
+    });
+  }
+
+  return slots
+    .map((slot) => {
+      const confidence = slot.node.memory.confidence.toFixed(2);
+      const activation = slot.node.activation.toFixed(2);
+      const score = slot.score.toFixed(2);
+      return `- (${slot.node.memory.kind}, wm=${slot.section}, score=${score}, activation=${activation}, confidence=${confidence}) ${slot.node.memory.text}`;
+    })
+    .join("\n");
+}
+
+function formatWorkingMemoryFrame(workingMemory?: WorkingMemoryFrame): string {
+  if (!workingMemory) {
+    return "No working memory gate was applied.";
+  }
+
+  const slots = workingMemory.slots
+    .map((slot) => `${slot.section}${slot.topicSubchannel ? `.${slot.topicSubchannel}` : ""}:${slot.node.memory.kind}:${slot.score.toFixed(2)}`)
+    .join(", ");
+  return [
+    workingMemory.summary,
+    ...formatTopicSubchannels(workingMemory),
+    `selected=${slots || "none"}`,
+    `excluded=${workingMemory.excluded.length}`,
+  ].join("\n");
+}
+
+function formatTopicSubchannels(workingMemory: WorkingMemoryFrame): string[] {
+  const labels: Array<[string, string]> = [
+    ["history", "Topic History"],
+    ["food", "Topic Food"],
+    ["route", "Topic Route"],
+    ["promise", "Topic Promise / Relationship"],
+    ["general", "Topic General"],
+  ];
+
+  return labels.map(([subchannel, label]) => {
+    const items = workingMemory.slots.filter(
+      (slot) => slot.section === "topic" && (slot.topicSubchannel ?? "general") === subchannel,
+    );
+    if (items.length === 0) {
+      return `[${label}]\nNone selected.`;
+    }
+    return [
+      `[${label}]`,
+      ...items.map((slot) => {
+        const score = slot.score.toFixed(2);
+        return `- (${slot.node.memory.kind}, score=${score}) ${slot.node.memory.text}`;
+      }),
+    ].join("\n");
+  });
+}
+
+function formatInnerState(innerState?: InnerState): string {
+  if (!innerState) {
+    return "No inner state snapshot.";
+  }
+
+  return [
+    `mood=${innerState.mood}`,
+    `arousal=${innerState.arousal.toFixed(2)}`,
+    `socialNeed=${innerState.socialNeed.toFixed(2)}`,
+    `curiosity=${innerState.curiosity.toFixed(2)}`,
+    `continuityNeed=${innerState.continuityNeed.toFixed(2)}`,
+    `dominantDrives=${innerState.dominantDrives.join(", ")}`,
+    `recallBiasTags=${innerState.recallBiasTags.join(", ")}`,
+    innerState.note,
   ].join("\n");
 }
 
