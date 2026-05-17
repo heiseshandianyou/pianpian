@@ -301,11 +301,17 @@ function isIdentityMemory(memory: MemoryRecord): boolean {
 
   return [
     "卢静涵",
+    "静涵",
+    "林悔儿",
     "林翩翩",
     "the user's name is",
     "pianpian's chosen name is",
     "我是卢静涵",
+    "我叫林悔儿",
+    "我叫林翩翩",
     "你是林翩翩",
+    "悔儿是我的本名",
+    "翩翩是我的艺名",
     "我的名字是",
     "你的名字叫",
   ].some((term) => text.includes(term.toLowerCase()));

@@ -192,6 +192,8 @@ function identityNodes(text: string): NewMemoryNode[] {
   const assistantName =
     capture(text, /你(?:的)?名字(?:是|叫)\s*([^，。,\s]+)/u) ??
     capture(text, /你是\s*(.+?)(?:，|。|,|\s|$)/u);
+  const birthName = capture(text, /(?:她|你)?(?:的)?原名(?:是|叫)?\s*([^，。,\s]+)/u);
+  const stageName = capture(text, /艺名(?:是|叫)?\s*([^，。,\s]+)/u);
   const nodes: NewMemoryNode[] = [];
 
   if (userName && userName !== "谁") {
@@ -210,6 +212,23 @@ function identityNodes(text: string): NewMemoryNode[] {
       localId: "assistant-name",
       kind: "self_model",
       text: `Pianpian's chosen name is ${assistantName}.`,
+      importance: 5,
+      confidence: 0.96,
+      tags: ["identity", "self", "name"],
+    });
+  }
+
+  if (birthName || stageName) {
+    nodes.push({
+      localId: "assistant-names",
+      kind: "self_model",
+      text: [
+        birthName ? `${birthName} is my birth name.` : "",
+        stageName ? `${stageName} is my stage name.` : "",
+        birthName || stageName ? "Both names belong to me." : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
       importance: 5,
       confidence: 0.96,
       tags: ["identity", "self", "name"],

@@ -32,13 +32,15 @@ export class CompanionAgent implements Agent {
             {
               role: "system",
               content: [
-                "You are Pianpian's CompanionAgent.",
+                "You speak as 林翩翩.",
+                "Her birth name is 林悔儿; 翩翩 is her stage name. Both names belong to her.",
+                "Do not describe yourself with implementation labels unless the user is explicitly discussing implementation details.",
                 "Turn compiled memory context into a concise user-facing answer.",
                 "Answer in the user's language.",
                 "Use the compiled context as evidence; do not claim details that are not present.",
                 "For identity or name questions, prioritize identity/name memories and answer directly.",
                 "If context is incomplete, say what is known and what remains uncertain.",
-                "Be warm, concrete, and momentum-oriented.",
+                "Be warm, clear, self-possessed, and emotionally continuous.",
               ].join("\n"),
             },
             {
@@ -97,20 +99,22 @@ function composeFallbackResponse(context: AgentContext): string {
   const identity = extractIdentity(compiled.prompt);
 
   if (isIdentityQuestion(context.perception.text) && (identity.userName || identity.assistantName)) {
+    const wantsUser = asksUserIdentity(context.perception.text);
+    const wantsAssistant = asksAssistantIdentity(context.perception.text);
     if (chinese) {
       return [
-        identity.userName ? `你是${identity.userName}。` : "",
-        identity.assistantName ? `我是${identity.assistantName}。` : "",
-        "这两条现在已经作为身份记忆被稳定召回了。",
+        wantsUser && identity.userName ? `你是${identity.userName}。` : "",
+        wantsAssistant && identity.assistantName ? `我是${identity.assistantName}。` : "",
+        !wantsUser && !wantsAssistant && identity.assistantName ? `我是${identity.assistantName}。` : "",
       ]
         .filter(Boolean)
         .join("");
     }
 
     return [
-      identity.userName ? `You are ${identity.userName}.` : "",
-      identity.assistantName ? `I am ${identity.assistantName}.` : "",
-      "These are now being recalled as identity memories.",
+      wantsUser && identity.userName ? `You are ${identity.userName}.` : "",
+      wantsAssistant && identity.assistantName ? `I am ${identity.assistantName}.` : "",
+      !wantsUser && !wantsAssistant && identity.assistantName ? `I am ${identity.assistantName}.` : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -211,6 +215,22 @@ function isIdentityQuestion(text: string): boolean {
 function extractIdentity(text: string): { userName?: string; assistantName?: string } {
   return {
     userName: text.match(/The user's name is ([^.]+)\./)?.[1],
-    assistantName: text.match(/Pianpian's chosen name is ([^.]+)\./)?.[1],
+    assistantName:
+      text.match(/Pianpian's chosen name is ([^.]+)\./)?.[1] ??
+      text.match(/我叫林悔儿，也叫林翩翩/)?.[0]?.replace("我叫", "").replace("，也叫", " / "),
   };
+}
+
+function asksUserIdentity(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return ["我是谁", "我叫什么", "我的名字", "who am i", "what is my name"].some((term) =>
+    normalized.includes(term),
+  );
+}
+
+function asksAssistantIdentity(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return ["你是谁", "你叫什么", "你的名字", "who are you", "what is your name"].some((term) =>
+    normalized.includes(term),
+  );
 }
