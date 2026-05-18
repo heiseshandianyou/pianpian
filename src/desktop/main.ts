@@ -657,9 +657,9 @@ function renderHtml(): string {
       <header class="header">
         <div class="title-row">
           <div>
-            <p class="eyebrow">Pianpian Desktop Shell</p>
-            <h1>&#32793;&#32793;&#37266;&#30528;&#12290;</h1>
-            <p class="subtitle">&#23569;&#19968;&#28857;&#26085;&#24535;&#65292;&#22810;&#19968;&#28857;&#30495;&#27491;&#26377;&#29992;&#30340;&#22238;&#24212;&#12290;</p>
+            <p class="eyebrow">Lin Pianpian</p>
+            <h1>&#26519;&#32793;&#32793;</h1>
+            <p class="subtitle">&#22312;&#36825;&#37324;&#35828;&#35805;&#65292;&#20063;&#22312;&#36825;&#37324;&#35760;&#20303;&#12290;</p>
           </div>
           <nav class="nav" aria-label="Pages">
             <button class="nav-button active" data-page-target="chat" type="button">&#23545;&#35805;</button>
@@ -681,8 +681,8 @@ function renderHtml(): string {
             <div class="message agent">&#25105;&#22312;&#12290;</div>
           </div>
           <form class="composer" id="form">
-            <textarea id="input" placeholder="Talk to Pianpian..." autofocus></textarea>
-            <button id="send" type="submit">Send</button>
+            <textarea id="input" placeholder="&#21644;&#32793;&#32793;&#35828;&#35805;..." autofocus></textarea>
+            <button id="send" type="submit">&#21457;&#36865;</button>
           </form>
         </section>
 
