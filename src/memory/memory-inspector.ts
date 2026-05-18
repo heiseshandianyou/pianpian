@@ -144,6 +144,7 @@ function renderNode(node: MemoryInspectionNode, index: number): string[] {
     "",
     `Text: ${node.memory.text}`,
     `Status: ${node.memory.status}; importance=${node.memory.importance}; confidence=${node.memory.confidence.toFixed(2)}; pinned=${node.memory.pinned}`,
+    `Source: ${renderSource(node)}`,
     `Activation: ${node.activation?.toFixed(2) ?? "n/a"}; depth=${node.depth ?? "n/a"}`,
     `Activation reasons: ${node.activationReasons.join("; ") || "none"}`,
     `Trace reasons: ${node.traceReasons.join(" | ") || "none"}`,
@@ -152,6 +153,15 @@ function renderNode(node: MemoryInspectionNode, index: number): string[] {
     `Edges: ${renderEdges(node)}`,
     "",
   ];
+}
+
+function renderSource(node: MemoryInspectionNode): string {
+  if (!node.memory.sourcePath) {
+    return node.memory.storageKind;
+  }
+
+  const anchor = node.memory.sourceAnchor ? `#${node.memory.sourceAnchor}` : "";
+  return `${node.memory.storageKind}:${node.memory.sourcePath}${anchor}`;
 }
 
 function renderEntities(node: MemoryInspectionNode): string {

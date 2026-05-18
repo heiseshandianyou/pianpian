@@ -27,6 +27,21 @@ export { ProactiveSchedulerAgent } from "./agents/proactive-scheduler-agent.js";
 export { WorkingMemoryGate } from "./memory/working-memory-gate.js";
 export { ToolRegistry, defaultTools } from "./tools/tool-registry.js";
 export { ToolPlanningAgent } from "./agents/tool-planning-agent.js";
+export {
+  annotateFormationWithVaultSources,
+  createStableMarkdownFileName,
+  MarkdownMemoryVault,
+  normalizeVaultSourcePath,
+  renderMarkdown,
+  rebuildMarkdownVaultIndex,
+  syncVaultMemoryFrontmatter,
+  writeFormationVaultDocuments,
+  buildMemoryFormationPlanFromSuggestions,
+  buildMemoryFormationPlanFromVaultPath,
+  suggestMemoryImportsFromEntry,
+  suggestMemoryImportsFromMarkdown,
+  suggestMemoryImportsFromVaultPath,
+} from "./vault/index.js";
 export type { ChatMessage, GenerateOptions, LlmProvider } from "./llm/types.js";
 export type { DialogueActKind, DialoguePlan } from "./dialogue/dialogue-act-planner.js";
 export type {
@@ -45,11 +60,13 @@ export type {
   AgentContext,
   AgentProposal,
   MemoryRecord,
+  MemoryStorageKind,
   MemoryInspectionNode,
   MemoryInspectionReport,
   MemoryRecallHarnessReport,
   MemoryRecallHarnessResult,
   NewMemory,
+  NewVaultDocument,
   Perception,
   AutonomyDrive,
   ActivatedMemoryGraph,
@@ -80,4 +97,17 @@ export type {
   WorkingMemoryFrame,
   WorkingMemorySection,
   WorkingMemorySlot,
+  VaultDocumentRecord,
 } from "./types.js";
+export type {
+  MarkdownFrontmatter,
+  MarkdownMemoryImportOptions,
+  MarkdownMemoryImportSuggestion,
+  MarkdownVaultEntry,
+  MarkdownVaultListItem,
+  MarkdownVaultSearchResult,
+  MarkdownVaultWriteInput,
+  VaultRebuildError,
+  VaultRebuildOptions,
+  VaultRebuildResult,
+} from "./vault/index.js";

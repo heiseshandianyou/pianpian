@@ -6,6 +6,8 @@ Pianpian is a TypeScript-first autonomous multi-agent core with durable long-ter
 
 - Autonomous runtime loop: perceive, retrieve memories, compile context, run agents, choose actions, and write new memories.
 - SQLite long-term memory: episodes, semantic facts, goals, preferences, reflections, relationships, and self-model records.
+- Markdown Memory Vault: durable high-value memories can be mirrored into human-readable `.md` files while SQLite keeps the graph index.
+- Vault import and sync: Markdown files can be parsed back into memory formation plans, and memory corrections can sync status back to frontmatter.
 - Memory activation graph: recall starts from text, identity continuity, pinned memories, entities, and relation-edge propagation.
 - Context compiler: activated memories are compressed into structured prompt sections for agents.
 - Specialist agents: memory curator, planner, reflector, companion, actor, policy, self-model, and director.
@@ -31,6 +33,7 @@ src/
   policy/      Action gate and risk review.
   runtime/     Autonomous runtime, heartbeat host, drive system, and intent router.
   tools/       Tool registry, including memory/project/Codex-oriented tools.
+  vault/       Markdown Memory Vault and bridge code for file-backed long-term memory.
 ```
 
 ## Run
@@ -62,6 +65,10 @@ npm run intent-router-demo
 npm run memory-correction-demo
 npm run memory-inspector-demo
 npm run memory-inspector-tool-demo
+npm run markdown-memory-vault-demo
+npm run vault-import-demo
+npm run vault-rebuild-demo
+npm run vault-correction-sync-demo
 npm run maintenance-demo
 npm run self-model-demo
 npm run policy-demo
@@ -99,6 +106,7 @@ PIANPIAN_MEMORY_LLM=0         Disable LLM memory formation.
 PIANPIAN_COMPANION_LLM=0      Disable LLM companion replies.
 PIANPIAN_SYNC_MEMORY=1        Force all memory formation to run synchronously.
 PIANPIAN_MEMORY_PATH=...      Use a custom SQLite memory path.
+PIANPIAN_MEMORY_VAULT_PATH=... Use a custom Markdown Memory Vault path.
 ```
 
 ## Design Direction

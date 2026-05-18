@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 import { MemoryConsolidationEngine } from "../memory/memory-consolidation-engine.js";
 import { MemoryStore } from "../memory/memory-store.js";
+import { syncVaultMemoryFrontmatter, MarkdownMemoryVault } from "../vault/index.js";
 
 export interface ActiveAgentHostOptions {
   heartbeatMs: number;
@@ -19,6 +20,8 @@ export interface ActiveAgentHostOptions {
   experienceReplayEveryCycles: number;
   recallTestEveryCycles: number;
   forgettingPolicy: ForgettingPolicy;
+  memoryVaultPath?: string;
+  useMarkdownVault?: boolean;
 }
 
 export interface HeartbeatResult {
@@ -71,6 +74,7 @@ export class ActiveAgentHost {
   private readonly consolidation: MemoryConsolidationEngine;
   private readonly experienceReplay: ExperienceReplayEngine;
   private readonly recallHarness: MemoryRecallTestHarness;
+  private readonly vault?: MarkdownMemoryVault;
   private readonly options: ActiveAgentHostOptions;
 
   constructor(
@@ -81,6 +85,10 @@ export class ActiveAgentHost {
     this.consolidation = new MemoryConsolidationEngine(memory);
     this.experienceReplay = new ExperienceReplayEngine(memory);
     this.recallHarness = new MemoryRecallTestHarness(memory);
+    this.vault =
+      options.useMarkdownVault === false
+        ? undefined
+        : new MarkdownMemoryVault(options.memoryVaultPath ?? process.env.PIANPIAN_MEMORY_VAULT_PATH ?? "data/memory-vault");
     this.options = {
       ...defaultOptions,
       ...options,
@@ -140,7 +148,7 @@ export class ActiveAgentHost {
         : undefined;
       const forgetting =
         this.shouldRunEvery(this.options.forgettingEveryCycles)
-          ? this.memory.applyForgetting(this.options.forgettingPolicy)
+          ? await this.applyForgettingWithVaultSync()
           : undefined;
       const experienceReplay = this.shouldRunEvery(this.options.experienceReplayEveryCycles)
         ? this.experienceReplay.runOnce()
@@ -193,6 +201,12 @@ export class ActiveAgentHost {
 
   private shouldRunEvery(cycles: number): boolean {
     return cycles > 0 && this.totalHeartbeats % cycles === 0;
+  }
+
+  private async applyForgettingWithVaultSync(): Promise<ForgettingReport> {
+    const result = this.memory.applyForgettingDetailed(this.options.forgettingPolicy);
+    await syncVaultMemoryFrontmatter(this.vault, result.archivedMemories);
+    return result.report;
   }
 }
 

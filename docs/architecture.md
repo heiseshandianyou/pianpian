@@ -95,6 +95,20 @@ The memory model should evolve from flat records into a high-dimensional network
 - memory edges store relations such as `derived_from`, `supports`, `contradicts`, `same_goal`, and `reinforces`.
 - activation engines should retrieve a subgraph by spreading activation from the current state instead of selecting isolated top-k records.
 
+### Markdown Memory Vault
+
+SQLite remains the graph index, but durable high-value memories can now be mirrored into a Markdown Memory Vault:
+
+- Markdown files hold human-readable memory bodies, identity notes, relationships, preferences, goals, and reflections.
+- SQLite keeps activation metadata, source provenance, entity links, FTS index, status, confidence, importance, and access counters.
+- Memory records can point back to Vault documents with `storageKind`, `sourcePath`, and `sourceAnchor`.
+- `MemoryFormationAgent` can propose `vaultWrites`; the runtime applies those writes through the same side-effect path used by synchronous and background memory formation.
+- Context compilation and memory inspection expose source metadata, so a recalled memory can point back to `markdown:path#anchor`.
+- Vault import helpers can parse Markdown frontmatter/body back into `MemoryFormationPlan` objects for rebuild or migration workflows.
+- Memory corrections and forgetting can sync changed status back into Markdown frontmatter through per-memory `memory_states`.
+- A rebuild helper can scan the Vault and repopulate an empty SQLite memory index from Markdown files.
+- The desktop shell includes a read-only Vault page for browsing, searching, and dry-run rebuild previews.
+
 ## Entity Graph
 
 The memory layer now has an entity graph alongside memory nodes:

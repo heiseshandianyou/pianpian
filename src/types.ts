@@ -28,6 +28,7 @@ export type MemoryKind =
   | "procedure"
   | "relationship";
 export type MemoryStatus = "active" | "archived";
+export type MemoryStorageKind = "sqlite" | "markdown";
 export type MemoryRelation =
   | "supports"
   | "contradicts"
@@ -63,6 +64,9 @@ export interface MemoryRecord {
   accessCount: number;
   pinned: boolean;
   status: MemoryStatus;
+  storageKind: MemoryStorageKind;
+  sourcePath?: string;
+  sourceAnchor?: string;
   archivedAt?: string;
 }
 
@@ -198,6 +202,9 @@ export interface NewMemory {
   confidence?: number;
   pinned?: boolean;
   tags?: string[];
+  storageKind?: MemoryStorageKind;
+  sourcePath?: string;
+  sourceAnchor?: string;
 }
 
 export type MemoryCorrectionOperation = "archive" | "pin" | "unpin" | "reinforce" | "downgrade";
@@ -214,6 +221,7 @@ export interface MemoryCorrectionReport {
   requested: number;
   changed: number;
   reason: string;
+  changedMemoryIds?: string[];
 }
 
 export interface MemoryFormationPlan {
@@ -221,11 +229,34 @@ export interface MemoryFormationPlan {
   edges: NewMemoryEdge[];
   entities?: NewEntity[];
   memoryEntityLinks?: NewMemoryEntityLink[];
+  vaultWrites?: NewVaultDocument[];
   rationale: string;
 }
 
 export interface NewMemoryNode extends NewMemory {
   localId: string;
+}
+
+export interface NewVaultDocument {
+  localId: string;
+  title: string;
+  path?: string;
+  anchor?: string;
+  body: string;
+  memoryLocalIds: string[];
+  tags?: string[];
+  importance?: Importance;
+  kind?: MemoryKind;
+}
+
+export interface VaultDocumentRecord {
+  id: string;
+  title: string;
+  path: string;
+  body: string;
+  frontmatter: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NewMemoryEdge {
@@ -266,6 +297,7 @@ export interface ForgettingReport {
   scanned: number;
   archived: number;
   preserved: number;
+  archivedMemoryIds?: string[];
 }
 
 export interface ConsolidationClusterReport {

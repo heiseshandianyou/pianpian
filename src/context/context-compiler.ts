@@ -148,7 +148,8 @@ function formatNodes(nodes: ActivatedMemoryNode[], section: string, trace: Conte
     .map((node) => {
       const confidence = node.memory.confidence.toFixed(2);
       const activation = node.activation.toFixed(2);
-      return `- (${node.memory.kind}, activation=${activation}, confidence=${confidence}) ${node.memory.text}`;
+      const source = formatMemorySource(node.memory);
+      return `- (${node.memory.kind}, activation=${activation}, confidence=${confidence}${source}) ${node.memory.text}`;
     })
     .join("\n");
 }
@@ -217,7 +218,8 @@ function formatSlots(slots: WorkingMemorySlot[], section: string, trace: Context
       const confidence = slot.node.memory.confidence.toFixed(2);
       const activation = slot.node.activation.toFixed(2);
       const score = slot.score.toFixed(2);
-      return `- (${slot.node.memory.kind}, wm=${slot.section}, score=${score}, activation=${activation}, confidence=${confidence}) ${slot.node.memory.text}`;
+      const source = formatMemorySource(slot.node.memory);
+      return `- (${slot.node.memory.kind}, wm=${slot.section}, score=${score}, activation=${activation}, confidence=${confidence}${source}) ${slot.node.memory.text}`;
     })
     .join("\n");
 }
@@ -258,10 +260,20 @@ function formatTopicSubchannels(workingMemory: WorkingMemoryFrame): string[] {
       `[${label}]`,
       ...items.map((slot) => {
         const score = slot.score.toFixed(2);
-        return `- (${slot.node.memory.kind}, score=${score}) ${slot.node.memory.text}`;
+        const source = formatMemorySource(slot.node.memory);
+        return `- (${slot.node.memory.kind}, score=${score}${source}) ${slot.node.memory.text}`;
       }),
     ].join("\n");
   });
+}
+
+function formatMemorySource(memory: ActivatedMemoryNode["memory"]): string {
+  if (!memory.sourcePath) {
+    return "";
+  }
+
+  const anchor = memory.sourceAnchor ? `#${memory.sourceAnchor}` : "";
+  return `, source=${memory.storageKind}:${memory.sourcePath}${anchor}`;
 }
 
 function formatInnerState(innerState?: InnerState): string {

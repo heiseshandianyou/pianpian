@@ -27,6 +27,12 @@ import { RecallQueryAgent } from "../memory/recall-query-agent.js";
 import { MemoryStore } from "../memory/memory-store.js";
 import { WorkingMemoryGate } from "../memory/working-memory-gate.js";
 import { ActionGate } from "../policy/action-gate.js";
+import {
+  annotateFormationWithVaultSources,
+  MarkdownMemoryVault,
+  writeFormationVaultDocuments,
+  syncVaultMemoryFrontmatter,
+} from "../vault/index.js";
 import { InnerStateEngine } from "./inner-state-engine.js";
 import { IntentRouter } from "./intent-router.js";
 import { nowIso } from "../utils/id.js";
@@ -78,6 +84,8 @@ export interface AutonomousRuntimeOptions {
   useLlmForCompanion?: boolean;
   asyncMemoryFormation?: boolean;
   trustAutonomousActions?: boolean;
+  memoryVaultPath?: string;
+  useMarkdownVault?: boolean;
 }
 
 export class AutonomousRuntime {
@@ -97,6 +105,7 @@ export class AutonomousRuntime {
   private readonly learningEvaluator = new LearningEvaluatorAgent();
   private readonly scratchpad: Record<string, unknown> = {};
   private readonly asyncMemoryFormation: boolean;
+  private readonly vault?: MarkdownMemoryVault;
   private readonly backgroundJobs: RuntimeBackgroundJob[] = [];
   private stepQueue: Promise<void> = Promise.resolve();
 
@@ -116,6 +125,10 @@ export class AutonomousRuntime {
     const memoryFormationLlm = options.useLlmForMemoryFormation === false ? undefined : llm;
     const companionLlm = options.useLlmForCompanion === false ? undefined : llm;
     this.asyncMemoryFormation = options.asyncMemoryFormation ?? false;
+    this.vault =
+      options.useMarkdownVault === false
+        ? undefined
+        : new MarkdownMemoryVault(options.memoryVaultPath ?? process.env.PIANPIAN_MEMORY_VAULT_PATH ?? "data/memory-vault");
     this.actionGate = new ActionGate(undefined, {
       trustAutonomousActions: options.trustAutonomousActions ?? false,
     });
@@ -202,7 +215,7 @@ export class AutonomousRuntime {
     };
     const syncMemoryProposals = await Promise.all(syncMemoryAgents.map((agent) => agent.run(context)));
     for (const proposal of syncMemoryProposals) {
-      this.applyProposalMemoryEffects(proposal);
+      await this.applyProposalMemoryEffects(proposal);
     }
 
     if (syncMemoryProposals.length > 0) {
@@ -228,7 +241,7 @@ export class AutonomousRuntime {
       ...(await Promise.all(foregroundAgents.map((agent) => agent.run(context)))),
     ];
     for (const proposal of proposals) {
-      this.applyProposalMemoryEffects(proposal);
+      await this.applyProposalMemoryEffects(proposal);
     }
     const queuedBackgroundJobs = backgroundAgents.map((agent) => this.queueBackgroundAgent(agent, context));
 
@@ -263,9 +276,7 @@ export class AutonomousRuntime {
       executionMemories.push(executionMemory);
     }
     const toolReflection = this.toolResultReflection.reflect(executionResults, executionMemories);
-    if (toolReflection.memoryFormation) {
-      this.memory.applyFormation(toolReflection.memoryFormation);
-    }
+    await this.applyProposalMemoryEffects(toolReflection);
     const learningEvaluation = this.learningEvaluator.evaluate({
       cycle: this.cycle,
       perception,
@@ -273,7 +284,7 @@ export class AutonomousRuntime {
       actions,
       executionResults,
     });
-    this.applyProposalMemoryEffects(learningEvaluation);
+    await this.applyProposalMemoryEffects(learningEvaluation);
     const allProposals = [...proposals, toolReflection, learningEvaluation];
 
     this.events.publish("cycle.completed", {
@@ -373,8 +384,8 @@ export class AutonomousRuntime {
 
     void agent
       .run(context)
-      .then((proposal) => {
-        this.applyProposalMemoryEffects(proposal);
+      .then(async (proposal) => {
+        await this.applyProposalMemoryEffects(proposal);
         job.status = "completed";
         job.intent = proposal.intent;
         job.completedAt = nowIso();
@@ -397,9 +408,12 @@ export class AutonomousRuntime {
     return { ...job };
   }
 
-  private applyProposalMemoryEffects(proposal: AgentProposal): void {
+  private async applyProposalMemoryEffects(proposal: AgentProposal): Promise<void> {
     if (proposal.memoryFormation) {
-      this.memory.applyFormation(proposal.memoryFormation);
+      const formation = annotateFormationWithVaultSources(proposal.memoryFormation);
+      const applied = this.memory.applyFormation(formation);
+      const localToMemory = new Map(formation.nodes.map((node, index) => [node.localId, applied.nodes[index]] as const));
+      await writeFormationVaultDocuments(this.vault, formation, localToMemory);
     }
 
     for (const memory of proposal.memoryWrites ?? []) {
@@ -407,7 +421,9 @@ export class AutonomousRuntime {
     }
 
     if (proposal.memoryCorrection) {
-      const report = this.memory.applyCorrection(proposal.memoryCorrection);
+      const correction = this.memory.applyCorrectionDetailed(proposal.memoryCorrection);
+      const report = correction.report;
+      await syncVaultMemoryFrontmatter(this.vault, correction.memories);
       if (proposal.memoryCorrection.note) {
         this.memory.add({
           ...proposal.memoryCorrection.note,
@@ -416,6 +432,7 @@ export class AutonomousRuntime {
       }
     }
   }
+
 }
 
 function formatActionLabel(action: AgentAction): string {

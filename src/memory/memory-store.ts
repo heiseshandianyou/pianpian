@@ -34,6 +34,9 @@ interface MemoryRow {
   access_count: number;
   pinned: number;
   status: "active" | "archived";
+  storage_kind: "sqlite" | "markdown";
+  source_path: string | null;
+  source_anchor: string | null;
   archived_at: string | null;
 }
 
@@ -89,6 +92,9 @@ export class MemoryStore {
         access_count integer not null default 0,
         pinned integer not null default 0,
         status text not null default 'active',
+        storage_kind text not null default 'sqlite',
+        source_path text,
+        source_anchor text,
         archived_at text
       );
 
@@ -140,9 +146,9 @@ export class MemoryStore {
     this.db
       .prepare(
         `insert into memories
-          (id, kind, text, importance, confidence, tags_json, created_at, last_accessed_at, access_count, pinned, status)
+          (id, kind, text, importance, confidence, tags_json, created_at, last_accessed_at, access_count, pinned, status, storage_kind, source_path, source_anchor)
          values
-          (@id, @kind, @text, @importance, @confidence, @tagsJson, @createdAt, @createdAt, 0, @pinned, 'active')`,
+          (@id, @kind, @text, @importance, @confidence, @tagsJson, @createdAt, @createdAt, 0, @pinned, 'active', @storageKind, @sourcePath, @sourceAnchor)`,
       )
       .run({
         id,
@@ -153,6 +159,9 @@ export class MemoryStore {
         tagsJson: JSON.stringify(tags),
         createdAt,
         pinned: memory.pinned ? 1 : 0,
+        storageKind: memory.storageKind ?? "sqlite",
+        sourcePath: memory.sourcePath ?? null,
+        sourceAnchor: memory.sourceAnchor ?? null,
       });
 
     this.db
@@ -171,6 +180,9 @@ export class MemoryStore {
       accessCount: 0,
       pinned: memory.pinned ?? false,
       status: "active",
+      storageKind: memory.storageKind ?? "sqlite",
+      sourcePath: memory.sourcePath,
+      sourceAnchor: memory.sourceAnchor,
     };
   }
 
@@ -579,56 +591,105 @@ export class MemoryStore {
   }
 
   archiveByIds(ids: string[], archivedAt = nowIso()): number {
+    return this.archiveByIdsDetailed(ids, archivedAt).changed;
+  }
+
+  archiveByIdsDetailed(ids: string[], archivedAt = nowIso()): { changed: number; memories: MemoryRecord[] } {
     if (ids.length === 0) {
-      return 0;
+      return { changed: 0, memories: [] };
     }
 
+    const beforeById = new Map(this.getByIds(ids).map((memory) => [memory.id, memory]));
     const update = this.db.prepare(
       "update memories set status = 'archived', archived_at = ? where id = ? and status = 'active'",
     );
     let archived = 0;
+    const changedIds: string[] = [];
     const transaction = this.db.transaction((memoryIds: string[]) => {
       for (const id of memoryIds) {
         const result = update.run(archivedAt, id) as { changes?: number };
-        archived += result.changes ?? 0;
+        const changes = result.changes ?? 0;
+        archived += changes;
+        if (changes > 0) {
+          changedIds.push(id);
+        }
       }
     });
 
     transaction(ids);
-    return archived;
+    return {
+      changed: archived,
+      memories: changedIds.flatMap((id) => {
+        const memory = beforeById.get(id);
+        return memory
+          ? [
+              {
+                ...memory,
+                status: "archived" as const,
+                archivedAt,
+              },
+            ]
+          : [];
+      }),
+    };
   }
 
   applyCorrection(plan: MemoryCorrectionPlan): MemoryCorrectionReport {
+    return this.applyCorrectionDetailed(plan).report;
+  }
+
+  applyCorrectionDetailed(plan: MemoryCorrectionPlan): { report: MemoryCorrectionReport; memories: MemoryRecord[] } {
     const ids = [...new Set(plan.targetMemoryIds)];
     if (ids.length === 0) {
       return {
-        operation: plan.operation,
-        requested: 0,
-        changed: 0,
-        reason: plan.reason,
+        report: {
+          operation: plan.operation,
+          requested: 0,
+          changed: 0,
+          changedMemoryIds: [],
+          reason: plan.reason,
+        },
+        memories: [],
       };
     }
 
     let changed = 0;
+    let memories: MemoryRecord[] = [];
     if (plan.operation === "archive") {
-      changed = this.archiveByIds(ids);
+      const result = this.archiveByIdsDetailed(ids);
+      changed = result.changed;
+      memories = result.memories;
     } else if (plan.operation === "pin" || plan.operation === "unpin") {
-      changed = this.updatePinned(ids, plan.operation === "pin");
+      const result = this.updatePinnedDetailed(ids, plan.operation === "pin");
+      changed = result.changed;
+      memories = result.memories;
     } else if (plan.operation === "reinforce") {
-      changed = this.adjustMemoryStrength(ids, 1, 0.08);
+      const result = this.adjustMemoryStrengthDetailed(ids, 1, 0.08);
+      changed = result.changed;
+      memories = result.memories;
     } else if (plan.operation === "downgrade") {
-      changed = this.adjustMemoryStrength(ids, -1, -0.18);
+      const result = this.adjustMemoryStrengthDetailed(ids, -1, -0.18);
+      changed = result.changed;
+      memories = result.memories;
     }
 
     return {
-      operation: plan.operation,
-      requested: ids.length,
-      changed,
-      reason: plan.reason,
+      report: {
+        operation: plan.operation,
+        requested: ids.length,
+        changed,
+        changedMemoryIds: memories.map((memory) => memory.id),
+        reason: plan.reason,
+      },
+      memories,
     };
   }
 
   applyForgetting(policy: ForgettingPolicy, now = new Date()): ForgettingReport {
+    return this.applyForgettingDetailed(policy, now).report;
+  }
+
+  applyForgettingDetailed(policy: ForgettingPolicy, now = new Date()): { report: ForgettingReport; archivedMemories: MemoryRecord[] } {
     const rows = this.db
       .prepare("select * from memories where status = 'active'")
       .all() as MemoryRow[];
@@ -638,6 +699,7 @@ export class MemoryStore {
     const archivedAt = nowIso();
     let archived = 0;
     let preserved = 0;
+    const archivedMemories: MemoryRecord[] = [];
 
     const transaction = this.db.transaction((memories: MemoryRow[]) => {
       for (const row of memories) {
@@ -656,14 +718,23 @@ export class MemoryStore {
 
         archive.run(archivedAt, memory.id);
         archived += 1;
+        archivedMemories.push({
+          ...memory,
+          status: "archived",
+          archivedAt,
+        });
       }
     });
 
     transaction(rows);
     return {
-      scanned: rows.length,
-      archived,
-      preserved,
+      report: {
+        scanned: rows.length,
+        archived,
+        preserved,
+        archivedMemoryIds: archivedMemories.map((memory) => memory.id),
+      },
+      archivedMemories,
     };
   }
 
@@ -676,6 +747,9 @@ export class MemoryStore {
       "alter table memories add column confidence real not null default 1.0",
       "alter table memories add column pinned integer not null default 0",
       "alter table memories add column status text not null default 'active'",
+      "alter table memories add column storage_kind text not null default 'sqlite'",
+      "alter table memories add column source_path text",
+      "alter table memories add column source_anchor text",
       "alter table memories add column archived_at text",
     ];
 
@@ -752,21 +826,45 @@ export class MemoryStore {
   }
 
   private updatePinned(ids: string[], pinned: boolean): number {
+    return this.updatePinnedDetailed(ids, pinned).changed;
+  }
+
+  private updatePinnedDetailed(ids: string[], pinned: boolean): { changed: number; memories: MemoryRecord[] } {
     const update = this.db.prepare(
       "update memories set pinned = ? where id = ? and status = 'active'",
     );
     let changed = 0;
+    const changedIds: string[] = [];
     const transaction = this.db.transaction((memoryIds: string[]) => {
       for (const id of memoryIds) {
         const result = update.run(pinned ? 1 : 0, id) as { changes?: number };
-        changed += result.changes ?? 0;
+        const changes = result.changes ?? 0;
+        changed += changes;
+        if (changes > 0) {
+          changedIds.push(id);
+        }
       }
     });
     transaction(ids);
-    return changed;
+    const memoriesById = new Map(this.getByIds(changedIds).map((memory) => [memory.id, memory]));
+    return {
+      changed,
+      memories: changedIds.flatMap((id) => {
+        const memory = memoriesById.get(id);
+        return memory ? [memory] : [];
+      }),
+    };
   }
 
   private adjustMemoryStrength(ids: string[], importanceDelta: number, confidenceDelta: number): number {
+    return this.adjustMemoryStrengthDetailed(ids, importanceDelta, confidenceDelta).changed;
+  }
+
+  private adjustMemoryStrengthDetailed(
+    ids: string[],
+    importanceDelta: number,
+    confidenceDelta: number,
+  ): { changed: number; memories: MemoryRecord[] } {
     const update = this.db.prepare(
       `update memories
        set importance = max(1, min(5, importance + ?)),
@@ -774,14 +872,22 @@ export class MemoryStore {
        where id = ? and status = 'active'`,
     );
     let changed = 0;
+    const changedIds: string[] = [];
     const transaction = this.db.transaction((memoryIds: string[]) => {
       for (const id of memoryIds) {
         const result = update.run(importanceDelta, confidenceDelta, id) as { changes?: number };
-        changed += result.changes ?? 0;
+        const changes = result.changes ?? 0;
+        changed += changes;
+        if (changes > 0) {
+          changedIds.push(id);
+        }
       }
     });
     transaction(ids);
-    return changed;
+    return {
+      changed,
+      memories: this.getByIds(changedIds),
+    };
   }
 }
 
@@ -798,6 +904,9 @@ function toMemoryRecord(row: MemoryRow): MemoryRecord {
     accessCount: row.access_count,
     pinned: row.pinned === 1,
     status: row.status,
+    storageKind: row.storage_kind ?? "sqlite",
+    sourcePath: row.source_path ?? undefined,
+    sourceAnchor: row.source_anchor ?? undefined,
     archivedAt: row.archived_at ?? undefined,
   };
 }

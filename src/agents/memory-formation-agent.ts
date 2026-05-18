@@ -1,7 +1,14 @@
 import { EntityExtractionAgent } from "./entity-extraction-agent.js";
 import type { LlmProvider } from "../llm/types.js";
 import { relationshipMemoryNodes } from "../memory/relationship-memory-schema.js";
-import type { Agent, AgentContext, AgentProposal, MemoryFormationPlan, NewMemoryNode } from "../types.js";
+import type {
+  Agent,
+  AgentContext,
+  AgentProposal,
+  MemoryFormationPlan,
+  NewMemoryNode,
+  NewVaultDocument,
+} from "../types.js";
 
 export class MemoryFormationAgent implements Agent {
   readonly id = "memory-curator" as const;
@@ -13,7 +20,7 @@ export class MemoryFormationAgent implements Agent {
   async run(context: AgentContext): Promise<AgentProposal> {
     const llmResult = this.llm ? await this.tryLlmFormation(context) : undefined;
     const memoryFormation = withEntities(
-      withRelationshipSchema(llmResult?.plan ?? this.ruleBasedFormation(context), context),
+      withVaultWrites(withRelationshipSchema(llmResult?.plan ?? this.ruleBasedFormation(context), context), context),
       this.entityExtraction,
     );
 
@@ -80,6 +87,19 @@ export class MemoryFormationAgent implements Agent {
                     relation: "derived_from|supports|contradicts|elaborates|same_goal|same_entity|temporal_neighbor|reinforces",
                     strength: "number 0..1",
                     confidence: "number 0..1",
+                  },
+                ],
+                vaultWrites: [
+                  {
+                    localId: "string",
+                    title: "string",
+                    path: "relative markdown path optional",
+                    anchor: "string optional",
+                    body: "markdown body",
+                    memoryLocalIds: ["string"],
+                    tags: ["string"],
+                    importance: "1|2|3|4|5 optional",
+                    kind: "episode|semantic|goal|preference|reflection|self_model|procedure|relationship optional",
                   },
                 ],
                 rationale: "string",
@@ -322,6 +342,98 @@ function withRelationshipSchema(plan: MemoryFormationPlan, context: AgentContext
   };
 }
 
+function withVaultWrites(plan: MemoryFormationPlan, context: AgentContext): MemoryFormationPlan {
+  const existing = plan.vaultWrites ?? [];
+  const covered = new Set(existing.flatMap((write) => write.memoryLocalIds));
+  const durableNodes = plan.nodes.filter((node) => shouldMirrorToVault(node, context) && !covered.has(node.localId));
+  if (durableNodes.length === 0) {
+    return plan;
+  }
+
+  return {
+    ...plan,
+    vaultWrites: [
+      ...existing,
+      ...durableNodes.map((node) => vaultWriteForNode(node, context)),
+    ],
+    rationale: `${plan.rationale} Durable high-value memories were scheduled for Markdown Vault mirroring.`,
+  };
+}
+
+function shouldMirrorToVault(node: NewMemoryNode, context: AgentContext): boolean {
+  if (node.kind === "episode" && context.perception.source !== "internal") {
+    return false;
+  }
+
+  return (
+    node.pinned === true ||
+    node.importance >= 4 ||
+    ["self_model", "relationship", "preference", "goal", "reflection", "procedure"].includes(node.kind) ||
+    (node.tags ?? []).some((tag) => ["identity", "relationship", "origin", "family", "preference", "goal", "style"].includes(tag))
+  );
+}
+
+function vaultWriteForNode(node: NewMemoryNode, context: AgentContext): NewVaultDocument {
+  const title = titleForNode(node);
+  const anchor = `memory-${node.localId}`;
+  return {
+    localId: `vault-${node.localId}`,
+    title,
+    path: `${vaultDirectoryForNode(node)}/${slug(title)}.md`,
+    anchor,
+    body: [
+      `# ${title}`,
+      "",
+      `<a id="${anchor}"></a>`,
+      "",
+      node.text,
+      "",
+      "## Meaning",
+      "",
+      `Kind: ${node.kind}. Importance: ${node.importance}. Confidence: ${(node.confidence ?? 1).toFixed(2)}.`,
+      "",
+      "## Source",
+      "",
+      `Formed from ${context.perception.source} perception at ${context.perception.createdAt}.`,
+    ].join("\n"),
+    memoryLocalIds: [node.localId],
+    tags: node.tags,
+    importance: node.importance,
+    kind: node.kind,
+  };
+}
+
+function titleForNode(node: NewMemoryNode): string {
+  const tag = (node.tags ?? []).find((item) => item !== "experience") ?? node.kind;
+  const preview = node.text.replace(/\s+/g, " ").slice(0, 52).replace(/[.。,:，；;!?？！]+$/u, "");
+  return `${capitalize(node.kind)} - ${capitalize(tag)}${preview ? ` - ${preview}` : ""}`;
+}
+
+function vaultDirectoryForNode(node: NewMemoryNode): string {
+  if (node.kind === "self_model") return "core";
+  if (node.kind === "relationship") return "relationships";
+  if (node.kind === "preference") return "preferences";
+  if (node.kind === "goal") return "goals";
+  if (node.kind === "reflection") return "reflections";
+  if (node.kind === "procedure") return "procedures";
+  return "memories";
+}
+
+function slug(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 88) || "memory";
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : `${value[0]?.toUpperCase()}${value.slice(1)}`;
+}
+
 function mergeEntities<T extends { localId: string }>(primary: T[], secondary: T[]): T[] {
   const merged = new Map<string, T>();
   for (const entity of [...primary, ...secondary]) {
@@ -361,8 +473,50 @@ function normalizeFormationPlan(plan: Partial<MemoryFormationPlan>, context: Age
   return {
     nodes,
     edges,
+    vaultWrites: normalizeVaultWrites(plan.vaultWrites, localIds),
     rationale: typeof plan.rationale === "string" ? plan.rationale : "LLM-generated memory formation plan.",
   };
+}
+
+function normalizeVaultWrites(value: unknown, localIds: Set<string>): NewVaultDocument[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const writes = value.flatMap((item): NewVaultDocument[] => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const candidate = item as Partial<NewVaultDocument>;
+    const memoryLocalIds = Array.isArray(candidate.memoryLocalIds)
+      ? candidate.memoryLocalIds.filter((id): id is string => typeof id === "string" && localIds.has(id))
+      : [];
+    if (
+      typeof candidate.localId !== "string" ||
+      typeof candidate.title !== "string" ||
+      typeof candidate.body !== "string" ||
+      memoryLocalIds.length === 0
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        localId: candidate.localId,
+        title: candidate.title,
+        path: typeof candidate.path === "string" ? candidate.path : undefined,
+        anchor: typeof candidate.anchor === "string" ? candidate.anchor : undefined,
+        body: candidate.body,
+        memoryLocalIds,
+        tags: Array.isArray(candidate.tags) ? candidate.tags.filter((tag): tag is string => typeof tag === "string") : [],
+        importance: clampImportance(Number(candidate.importance ?? 3)),
+        kind: candidate.kind,
+      },
+    ];
+  });
+
+  return writes.length > 0 ? writes : undefined;
 }
 
 function isUsableNode(node: unknown): node is NewMemoryNode {
