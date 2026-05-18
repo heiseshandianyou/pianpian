@@ -1,4 +1,6 @@
 import { DriveSystem } from "./drive-system.js";
+import { ExperienceReplayEngine } from "./experience-replay-engine.js";
+import { MemoryRecallTestHarness } from "../memory/memory-recall-test-harness.js";
 import type { AutonomousRuntime, RuntimeCycleResult } from "./autonomous-runtime.js";
 import type {
   AutonomyDrive,
@@ -14,6 +16,8 @@ export interface ActiveAgentHostOptions {
   consolidationEveryCycles: number;
   relatedConsolidationEveryCycles: number;
   forgettingEveryCycles: number;
+  experienceReplayEveryCycles: number;
+  recallTestEveryCycles: number;
   forgettingPolicy: ForgettingPolicy;
 }
 
@@ -43,6 +47,8 @@ const defaultOptions: ActiveAgentHostOptions = {
   consolidationEveryCycles: 6,
   relatedConsolidationEveryCycles: 24,
   forgettingEveryCycles: 12,
+  experienceReplayEveryCycles: 10,
+  recallTestEveryCycles: 8,
   forgettingPolicy: {
     archiveBelowScore: 0.38,
     halfLifeDays: 14,
@@ -63,6 +69,8 @@ export class ActiveAgentHost {
   private lastError?: string;
   private readonly drives = new DriveSystem();
   private readonly consolidation: MemoryConsolidationEngine;
+  private readonly experienceReplay: ExperienceReplayEngine;
+  private readonly recallHarness: MemoryRecallTestHarness;
   private readonly options: ActiveAgentHostOptions;
 
   constructor(
@@ -71,6 +79,8 @@ export class ActiveAgentHost {
     options: Partial<ActiveAgentHostOptions> = {},
   ) {
     this.consolidation = new MemoryConsolidationEngine(memory);
+    this.experienceReplay = new ExperienceReplayEngine(memory);
+    this.recallHarness = new MemoryRecallTestHarness(memory);
     this.options = {
       ...defaultOptions,
       ...options,
@@ -132,9 +142,17 @@ export class ActiveAgentHost {
         this.shouldRunEvery(this.options.forgettingEveryCycles)
           ? this.memory.applyForgetting(this.options.forgettingPolicy)
           : undefined;
+      const experienceReplay = this.shouldRunEvery(this.options.experienceReplayEveryCycles)
+        ? this.experienceReplay.runOnce()
+        : undefined;
+      const recallTest = this.shouldRunEvery(this.options.recallTestEveryCycles)
+        ? await this.recallHarness.runOnce()
+        : undefined;
       const maintenance: MaintenanceReport = {
         consolidation: mergeConsolidationReports(consolidation, relatedConsolidation),
         forgetting,
+        experienceReplay,
+        recallTest,
       };
 
       this.lastCompletedAt = new Date().toISOString();

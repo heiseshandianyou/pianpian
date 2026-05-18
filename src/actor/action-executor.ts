@@ -1,6 +1,7 @@
 import { nowIso } from "../utils/id.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { planToolRecovery } from "./tool-recovery-planner.js";
 import { ToolRegistry } from "../tools/tool-registry.js";
 import type { AgentAction, ActionExecutionResult, PolicyDecision, ToolContext } from "../types.js";
 
@@ -24,7 +25,13 @@ export class ActionExecutor {
         continue;
       }
 
-      results.push(await this.execute(decision.action, context));
+      const result = await this.execute(decision.action, context);
+      results.push(result);
+
+      const recovery = planToolRecovery(result);
+      if (recovery) {
+        results.push(await this.execute(recovery, context));
+      }
     }
 
     return results;

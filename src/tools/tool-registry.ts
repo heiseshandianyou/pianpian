@@ -1,7 +1,7 @@
 import { cwd } from "node:process";
 import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ToolContext, ToolResult, ToolRisk } from "../types.js";
 
@@ -175,7 +175,7 @@ export function defaultTools(): ToolDefinition[] {
 
         const maxResults = clampInteger(input?.maxResults, 1, 200, 80);
         try {
-          const { stdout } = await execFileAsync("rg", ["-n", "--no-heading", "--color", "never", query, target.path], {
+          const { stdout } = await runProjectCommand("rg", ["-n", "--no-heading", "--color", "never", query, target.path], {
             cwd: root,
             timeout: 20_000,
             maxBuffer: 1024 * 1024,
@@ -203,7 +203,18 @@ export function defaultTools(): ToolDefinition[] {
               },
             };
           }
-          throw error;
+          const lines = await searchWorkspaceInProcess(root, target.path, query, maxResults);
+          return {
+            toolName: "workspace.search",
+            output: lines.join("\n") || "No matches.",
+            metadata: {
+              query,
+              path: target.path,
+              count: lines.length,
+              fallback: "in-process-search",
+              fallbackReason: formatToolError(error),
+            },
+          };
         }
       },
     },
@@ -247,7 +258,12 @@ export function defaultTools(): ToolDefinition[] {
           };
         }
 
-        const { stdout, stderr } = await execFileAsync(parsed.file, parsed.args, {
+        const fallback = await runAllowlistedCommandInProcess(root, parsed.file, parsed.args);
+        if (fallback) {
+          return fallback;
+        }
+
+        const { stdout, stderr } = await runProjectCommand(parsed.file, parsed.args, {
           cwd: root,
           timeout: 120_000,
           maxBuffer: 1024 * 1024,
@@ -292,7 +308,7 @@ export function defaultTools(): ToolDefinition[] {
 
         args.push(prompt);
 
-        const { stdout, stderr } = await execFileAsync("codex", args, {
+        const { stdout, stderr } = await runProjectCommand("codex", args, {
           timeout: 120_000,
           maxBuffer: 1024 * 1024,
         });
@@ -391,4 +407,227 @@ function parseWorkspaceCommand(command: string, args: string[]): { file: string;
   }
 
   return undefined;
+}
+
+async function runAllowlistedCommandInProcess(
+  root: string,
+  command: string,
+  args: string[],
+): Promise<ToolResult | undefined> {
+  if (command === "npm" && args[0] === "run" && args[1] === "typecheck") {
+    const output = await runTypeScriptProject(root, false);
+    return {
+      toolName: "workspace.command",
+      output,
+      metadata: {
+        command: "npm run typecheck",
+        fallback: "typescript-api",
+      },
+    };
+  }
+
+  if (command === "npm" && args[0] === "run" && args[1] === "build") {
+    const output = await runTypeScriptProject(root, true);
+    return {
+      toolName: "workspace.command",
+      output,
+      metadata: {
+        command: "npm run build",
+        fallback: "typescript-api",
+      },
+    };
+  }
+
+  if (command === "rg" && args.length >= 1) {
+    const query = args[0];
+    const path = resolveWorkspacePath(root, args[1] ?? ".");
+    if (!path.ok) {
+      return path.result;
+    }
+    const lines = await searchWorkspaceInProcess(root, path.path, query, 80);
+    return {
+      toolName: "workspace.command",
+      output: lines.join("\n") || "No matches.",
+      metadata: {
+        command: `rg ${query}`,
+        fallback: "in-process-search",
+        count: lines.length,
+      },
+    };
+  }
+
+  return undefined;
+}
+
+async function runTypeScriptProject(root: string, emit: boolean): Promise<string> {
+  const ts = await import("typescript");
+  const configPath = ts.findConfigFile(root, ts.sys.fileExists, "tsconfig.json");
+  if (!configPath) {
+    return "TypeScript fallback failed: tsconfig.json was not found.";
+  }
+
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error) {
+    return formatDiagnostics(ts, [config.error]);
+  }
+
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(configPath));
+  if (parsed.errors.length > 0) {
+    return formatDiagnostics(ts, parsed.errors);
+  }
+
+  const program = ts.createProgram(parsed.fileNames, {
+    ...parsed.options,
+    noEmit: !emit,
+  });
+  const emitResult = emit ? program.emit() : undefined;
+  const diagnostics = ts.getPreEmitDiagnostics(program).concat(emitResult?.diagnostics ?? []);
+  if (diagnostics.length > 0) {
+    return formatDiagnostics(ts, diagnostics);
+  }
+
+  return emit ? "TypeScript build completed through in-process fallback." : "TypeScript typecheck completed through in-process fallback.";
+}
+
+function formatDiagnostics(
+  ts: typeof import("typescript"),
+  diagnostics: readonly import("typescript").Diagnostic[],
+): string {
+  if (diagnostics.length === 0) {
+    return "No TypeScript diagnostics.";
+  }
+
+  return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+    getCanonicalFileName: (fileName) => fileName,
+    getCurrentDirectory: () => cwd(),
+    getNewLine: () => "\n",
+  });
+}
+
+async function searchWorkspaceInProcess(
+  root: string,
+  targetPath: string,
+  query: string,
+  maxResults: number,
+): Promise<string[]> {
+  const results: string[] = [];
+  const normalizedQuery = query.toLowerCase();
+
+  async function visit(path: string): Promise<void> {
+    if (results.length >= maxResults || shouldSkipPath(root, path)) {
+      return;
+    }
+
+    const info = await stat(path);
+    if (info.isDirectory()) {
+      const entries = await readdir(path);
+      for (const entry of entries) {
+        await visit(join(path, entry));
+        if (results.length >= maxResults) {
+          return;
+        }
+      }
+      return;
+    }
+
+    if (!info.isFile() || info.size > 512_000 || !isTextLike(path)) {
+      return;
+    }
+
+    const text = await readFile(path, "utf8");
+    const lines = text.split(/\r?\n/);
+    for (const [index, line] of lines.entries()) {
+      if (line.toLowerCase().includes(normalizedQuery)) {
+        results.push(`${relative(root, path)}:${index + 1}:${line}`);
+        if (results.length >= maxResults) {
+          return;
+        }
+      }
+    }
+  }
+
+  await visit(targetPath);
+  return results;
+}
+
+function shouldSkipPath(root: string, path: string): boolean {
+  const relation = relative(root, path).replace(/\\/g, "/");
+  return relation
+    .split("/")
+    .some((part) => [".git", "node_modules", "dist", "out", "build", ".turbo", ".cache"].includes(part));
+}
+
+function isTextLike(path: string): boolean {
+  const extension = extname(path).toLowerCase();
+  if (!extension) {
+    return true;
+  }
+  return [
+    ".cjs",
+    ".css",
+    ".html",
+    ".js",
+    ".json",
+    ".jsx",
+    ".md",
+    ".mjs",
+    ".sql",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".yml",
+    ".yaml",
+  ].includes(extension);
+}
+
+function formatToolError(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+  const candidate = error as { code?: string; message?: string };
+  return [candidate.code, candidate.message].filter(Boolean).join(": ").slice(0, 240);
+}
+
+async function runProjectCommand(
+  file: string,
+  args: string[],
+  options: Parameters<typeof execFileAsync>[2],
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return normalizeExecResult(await execFileAsync(file, args, options));
+  } catch (error) {
+    if (!shouldRetryThroughCmd(error)) {
+      throw error;
+    }
+
+    return normalizeExecResult(await execFileAsync("cmd.exe", ["/d", "/s", "/c", quoteWindowsCommand(file, args)], options));
+  }
+}
+
+function normalizeExecResult(result: { stdout: string | Buffer; stderr: string | Buffer }): { stdout: string; stderr: string } {
+  return {
+    stdout: typeof result.stdout === "string" ? result.stdout : result.stdout.toString("utf8"),
+    stderr: typeof result.stderr === "string" ? result.stderr : result.stderr.toString("utf8"),
+  };
+}
+
+function shouldRetryThroughCmd(error: unknown): boolean {
+  if (process.platform !== "win32") {
+    return false;
+  }
+
+  const candidate = error as { code?: string; errno?: number };
+  return candidate.code === "EPERM" || candidate.code === "ENOENT" || candidate.code === "EINVAL";
+}
+
+function quoteWindowsCommand(file: string, args: string[]): string {
+  return [file, ...args].map(quoteWindowsArg).join(" ");
+}
+
+function quoteWindowsArg(value: string): string {
+  if (!/[ \t\n\v"]/u.test(value)) {
+    return value;
+  }
+
+  return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/g, "$&$&")}"`;
 }

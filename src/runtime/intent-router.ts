@@ -50,11 +50,11 @@ function agentsForMode(mode: TaskMode): AgentId[] {
   }
 
   if (mode === "memory-inspection") {
-    return ["actor", "companion"];
+    return ["tool-planner", "actor", "companion"];
   }
 
   if (mode === "tool-status") {
-    return ["memory-curator", "actor", "companion"];
+    return ["memory-curator", "tool-planner", "actor", "companion"];
   }
 
   if (mode === "tool-result-recall") {
@@ -62,11 +62,11 @@ function agentsForMode(mode: TaskMode): AgentId[] {
   }
 
   if (mode === "development") {
-    return ["memory-curator", "planner", "companion"];
+    return ["memory-curator", "tool-planner", "planner", "companion"];
   }
 
   if (mode === "autonomous-maintenance") {
-    return ["memory-curator", "self-model", "associator", "inner-life", "desire-habit", "proactive-intent", "proactive-scheduler", "planner", "reflector", "companion"];
+    return ["memory-curator", "memory-reviewer", "self-model", "associator", "inner-life", "desire-habit", "proactive-intent", "proactive-scheduler", "tool-planner", "planner", "reflector", "companion"];
   }
 
   return memoryAndCompanion;
@@ -107,6 +107,18 @@ const correctionTerms = [
   "不对",
   "错了",
   "错误",
+  "设为重要",
+  "固定这条",
+  "取消固定",
+  "降权",
+  "不重要",
+  "不要再记",
+  "别记",
+  "删除这条记忆",
+  "归档",
+  "不对",
+  "错了",
+  "错误",
   "wrong",
   "incorrect",
   "forget this",
@@ -122,6 +134,11 @@ const correctionTerms = [
 ];
 
 const inspectionTerms = [
+  "为什么想起",
+  "为什么召回",
+  "解释记忆",
+  "检查记忆",
+  "记忆检查",
   "why did you remember",
   "why did you recall",
   "why was this memory activated",
@@ -137,6 +154,10 @@ const inspectionTerms = [
 ];
 
 const pastToolResultTerms = [
+  "刚才工具结果",
+  "刚才的工具结果",
+  "工具执行结果",
+  "上次工具结果",
   "latest tool execution results",
   "tool execution results",
   "previous tool results",
@@ -148,6 +169,17 @@ const pastToolResultTerms = [
 ];
 
 const statusTerms = [
+  "记忆统计",
+  "记忆状态",
+  "记忆数量",
+  "项目状态",
+  "工程状态",
+  "当前项目",
+  "当前进度",
+  "状态",
+  "进度",
+  "检查一下",
+  "看一下",
   "memory stats",
   "memory status",
   "project status",
@@ -168,6 +200,16 @@ const statusTerms = [
 ];
 
 const developmentTerms = [
+  "开发",
+  "实现",
+  "修复",
+  "重构",
+  "下一阶段",
+  "启动下一阶段",
+  "检查",
+  "构建",
+  "运行",
+  "代码",
   "implement",
   "build",
   "fix",

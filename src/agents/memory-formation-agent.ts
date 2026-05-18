@@ -1,5 +1,6 @@
 import { EntityExtractionAgent } from "./entity-extraction-agent.js";
 import type { LlmProvider } from "../llm/types.js";
+import { relationshipMemoryNodes } from "../memory/relationship-memory-schema.js";
 import type { Agent, AgentContext, AgentProposal, MemoryFormationPlan, NewMemoryNode } from "../types.js";
 
 export class MemoryFormationAgent implements Agent {
@@ -12,7 +13,7 @@ export class MemoryFormationAgent implements Agent {
   async run(context: AgentContext): Promise<AgentProposal> {
     const llmResult = this.llm ? await this.tryLlmFormation(context) : undefined;
     const memoryFormation = withEntities(
-      llmResult?.plan ?? this.ruleBasedFormation(context),
+      withRelationshipSchema(llmResult?.plan ?? this.ruleBasedFormation(context), context),
       this.entityExtraction,
     );
 
@@ -121,6 +122,7 @@ export class MemoryFormationAgent implements Agent {
       },
     ];
     nodes.push(...identityNodes(text));
+    nodes.push(...relationshipMemoryNodes(text));
 
     if (mentions(text, ["TypeScript", "typescript"])) {
       nodes.push({
@@ -285,6 +287,38 @@ function withEntities(plan: MemoryFormationPlan, extractor: EntityExtractionAgen
     ...plan,
     entities: mergeEntities(plan.entities ?? [], extracted.entities ?? []),
     memoryEntityLinks: [...(plan.memoryEntityLinks ?? []), ...(extracted.memoryEntityLinks ?? [])],
+  };
+}
+
+function withRelationshipSchema(plan: MemoryFormationPlan, context: AgentContext): MemoryFormationPlan {
+  const schemaNodes = relationshipMemoryNodes(context.perception.text);
+  if (schemaNodes.length === 0) {
+    return plan;
+  }
+
+  const existingLocalIds = new Set(plan.nodes.map((node) => node.localId));
+  const newNodes = schemaNodes.filter((node) => !existingLocalIds.has(node.localId));
+  if (newNodes.length === 0) {
+    return plan;
+  }
+
+  const hasEpisode = plan.nodes.some((node) => node.localId === "episode");
+  return {
+    ...plan,
+    nodes: [...plan.nodes, ...newNodes],
+    edges: [
+      ...plan.edges,
+      ...(hasEpisode
+        ? newNodes.map((node) => ({
+            fromLocalId: "episode",
+            toLocalId: node.localId,
+            relation: "derived_from" as const,
+            strength: node.importance / 5,
+            confidence: node.confidence,
+          }))
+        : []),
+    ],
+    rationale: `${plan.rationale} Relationship schema attached durable family/origin memory nodes when relevant.`,
   };
 }
 

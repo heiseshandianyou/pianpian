@@ -4,8 +4,10 @@ import { CompanionAgent } from "../agents/companion-agent.js";
 import { DesireHabitAgent } from "../agents/desire-habit-agent.js";
 import { DirectorAgent } from "../agents/director-agent.js";
 import { InnerLifeAgent } from "../agents/inner-life-agent.js";
+import { LearningEvaluatorAgent } from "../agents/learning-evaluator-agent.js";
 import { MemoryCorrectionAgent } from "../agents/memory-correction-agent.js";
 import { MemoryFormationAgent } from "../agents/memory-formation-agent.js";
+import { MemoryReviewAgent } from "../agents/memory-review-agent.js";
 import { PlannerAgent } from "../agents/planner-agent.js";
 import { PolicyAgent } from "../agents/policy-agent.js";
 import { ProactiveIntentAgent } from "../agents/proactive-intent-agent.js";
@@ -13,6 +15,7 @@ import { ProactiveSchedulerAgent } from "../agents/proactive-scheduler-agent.js"
 import { ReflectorAgent } from "../agents/reflector-agent.js";
 import { SelfModelAgent } from "../agents/self-model-agent.js";
 import { ToolResultReflectionAgent } from "../agents/tool-result-reflection-agent.js";
+import { ToolPlanningAgent } from "../agents/tool-planning-agent.js";
 import { ActionExecutor } from "../actor/action-executor.js";
 import { ContextCompiler } from "../context/context-compiler.js";
 import { EventBus } from "../events/event-bus.js";
@@ -91,6 +94,7 @@ export class AutonomousRuntime {
   private readonly actionGate: ActionGate;
   private readonly actionExecutor = new ActionExecutor();
   private readonly toolResultReflection = new ToolResultReflectionAgent();
+  private readonly learningEvaluator = new LearningEvaluatorAgent();
   private readonly scratchpad: Record<string, unknown> = {};
   private readonly asyncMemoryFormation: boolean;
   private readonly backgroundJobs: RuntimeBackgroundJob[] = [];
@@ -121,10 +125,12 @@ export class AutonomousRuntime {
     this.agents = new Map(
       [
         new MemoryFormationAgent(memoryFormationLlm),
+        new MemoryReviewAgent(),
         new MemoryCorrectionAgent(),
         new SelfModelAgent(),
         new PolicyAgent(),
         new ActorAgent(),
+        new ToolPlanningAgent(),
         new PlannerAgent(),
         new ReflectorAgent(),
         new AutonomousAssociationAgent(),
@@ -260,7 +266,15 @@ export class AutonomousRuntime {
     if (toolReflection.memoryFormation) {
       this.memory.applyFormation(toolReflection.memoryFormation);
     }
-    const allProposals = [...proposals, toolReflection];
+    const learningEvaluation = this.learningEvaluator.evaluate({
+      cycle: this.cycle,
+      perception,
+      proposals: [...proposals, toolReflection],
+      actions,
+      executionResults,
+    });
+    this.applyProposalMemoryEffects(learningEvaluation);
+    const allProposals = [...proposals, toolReflection, learningEvaluation];
 
     this.events.publish("cycle.completed", {
       cycle: this.cycle,
@@ -424,16 +438,18 @@ function actionTags(action: AgentAction): string[] {
 function shouldSynchronizeMemoryFormation(input: string): boolean {
   const normalized = input.toLowerCase();
   return [
-    "记住",
-    "記住",
-    "记一下",
-    "帮我记",
-    "幫我記",
-    "记到长期记忆",
-    "存到长期记忆",
+    "\u8bb0\u4f4f",
+    "\u8a18\u4f4f",
+    "\u8bb0\u4e00\u4e0b",
+    "\u5e2e\u6211\u8bb0",
+    "\u5e2e\u6211\u8bb0\u4f4f",
+    "\u5e6b\u6211\u8a18",
+    "\u8bb0\u5230\u957f\u671f\u8bb0\u5fc6",
+    "\u5b58\u5230\u957f\u671f\u8bb0\u5fc6",
     "remember",
     "remember this",
     "save this",
     "commit this to memory",
   ].some((term) => normalized.includes(term));
 }
+

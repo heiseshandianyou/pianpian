@@ -1,11 +1,14 @@
 export type AgentId =
   | "director"
   | "memory-curator"
+  | "memory-reviewer"
   | "memory-corrector"
   | "self-model"
   | "policy"
+  | "tool-planner"
   | "planner"
   | "reflector"
+  | "learning-evaluator"
   | "associator"
   | "inner-life"
   | "desire-habit"
@@ -291,6 +294,61 @@ export interface AutonomyDrive {
 export interface MaintenanceReport {
   consolidation?: ConsolidationReport;
   forgetting?: ForgettingReport;
+  experienceReplay?: ExperienceReplayReport;
+  recallTest?: MemoryRecallHarnessReport;
+}
+
+export interface ExperienceReplayClusterReport {
+  key: string;
+  sourceMemoryIds: string[];
+  createdMemoryIds: string[];
+  skippedReason?: string;
+}
+
+export interface ExperienceReplayReport {
+  scanned: number;
+  candidateSources: number;
+  clusters: ExperienceReplayClusterReport[];
+  createdMemoryIds: string[];
+  reinforcedEdges: number;
+  downgradedEpisodeIds: string[];
+  archivedEpisodeIds: string[];
+  skippedReasons: string[];
+  ranAt: string;
+}
+
+export interface MemoryRecallHarnessResult {
+  target: {
+    id: string;
+    kind: MemoryKind;
+    importance: number;
+    confidence: number;
+    createdAt: string;
+    tags: string[];
+    reason: "high-value" | "recent";
+    textPreview: string;
+  };
+  query: string;
+  success: boolean;
+  score: number;
+  activated: boolean;
+  selectedByWorkingMemory: boolean;
+  compiledIntoContext: boolean;
+  directRetrievalHit: boolean;
+  bestActivation: number;
+  workingMemorySections: string[];
+  notes: string[];
+}
+
+export interface MemoryRecallHarnessReport {
+  ranAt: string;
+  scanned: number;
+  selected: number;
+  successes: number;
+  failures: number;
+  writes: number;
+  summary: string;
+  results: MemoryRecallHarnessResult[];
 }
 
 export type InnerMood = "quiet" | "curious" | "tender" | "focused" | "restless" | "protective";

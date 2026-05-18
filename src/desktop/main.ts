@@ -46,12 +46,12 @@ app.on("before-quit", () => {
 
 function createMainWindow(): PianpianWindow {
   return new BrowserWindow({
-    width: 1180,
-    height: 820,
-    minWidth: 940,
-    minHeight: 680,
+    width: 1080,
+    height: 760,
+    minWidth: 880,
+    minHeight: 620,
     title: "Pianpian",
-    backgroundColor: "#f3ead7",
+    backgroundColor: "#f6efe2",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -192,13 +192,13 @@ function renderHtml(): string {
       --ink: #20180f;
       --muted: #77644c;
       --paper: #fff8ea;
-      --panel: rgba(255, 248, 234, 0.82);
+      --panel: rgba(255, 250, 240, 0.9);
       --line: rgba(70, 47, 24, 0.18);
       --clay: #b85c38;
       --moss: #426b4f;
       --gold: #d9a441;
       --blue: #2f5f73;
-      --shadow: 0 24px 70px rgba(61, 39, 17, 0.18);
+      --shadow: 0 18px 55px rgba(61, 39, 17, 0.13);
     }
 
     * { box-sizing: border-box; }
@@ -209,9 +209,9 @@ function renderHtml(): string {
       color: var(--ink);
       font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
       background:
-        radial-gradient(circle at 18% 10%, rgba(217, 164, 65, 0.28), transparent 34%),
-        radial-gradient(circle at 82% 18%, rgba(66, 107, 79, 0.22), transparent 34%),
-        linear-gradient(135deg, #f2e2c4 0%, #faf2df 50%, #e9d6b9 100%);
+        radial-gradient(circle at 18% 10%, rgba(217, 164, 65, 0.18), transparent 32%),
+        radial-gradient(circle at 82% 18%, rgba(66, 107, 79, 0.14), transparent 30%),
+        linear-gradient(135deg, #f5e8d2 0%, #fbf4e7 58%, #ead9c0 100%);
       overflow: hidden;
     }
 
@@ -234,12 +234,12 @@ function renderHtml(): string {
       grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
       gap: 20px;
       height: 100vh;
-      padding: 22px;
+      padding: 18px;
     }
 
     .panel {
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 24px;
       background: var(--panel);
       box-shadow: var(--shadow);
       backdrop-filter: blur(18px);
@@ -252,7 +252,7 @@ function renderHtml(): string {
     }
 
     .header {
-      padding: 26px 28px 18px;
+      padding: 20px 24px 16px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(90deg, rgba(184, 92, 56, 0.12), rgba(217, 164, 65, 0.10));
     }
@@ -268,9 +268,15 @@ function renderHtml(): string {
     h1 {
       margin: 0;
       max-width: 780px;
-      font-size: clamp(34px, 4.2vw, 62px);
-      line-height: 0.95;
+      font-size: clamp(32px, 3.2vw, 48px);
+      line-height: 1;
       letter-spacing: -0.045em;
+    }
+
+    .subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font: 14px/1.45 "Trebuchet MS", sans-serif;
     }
 
     .route-row {
@@ -393,9 +399,9 @@ function renderHtml(): string {
 
     .side {
       display: grid;
-      grid-template-rows: auto auto auto minmax(140px, 0.7fr) minmax(220px, 1.2fr);
-      gap: 14px;
-      padding: 16px;
+      grid-template-rows: auto auto minmax(140px, 1fr) minmax(180px, 1.1fr);
+      gap: 12px;
+      padding: 14px;
     }
 
     .card {
@@ -515,15 +521,16 @@ function renderHtml(): string {
   <div class="shell">
     <section class="panel main">
       <header class="header">
-        <p class="eyebrow">Pianpian desktop shell</p>
-        <h1>A small window into the memory engine.</h1>
+        <p class="eyebrow">Pianpian</p>
+        <h1>翩翩醒着。</h1>
+        <p class="subtitle">少一点日志，多一点真正有用的回应。</p>
         <div class="route-row">
           <span class="pill"><span class="dot"></span><span id="route">route: idle</span></span>
           <span class="pill" id="agents">agents: none</span>
         </div>
       </header>
       <main class="conversation" id="conversation">
-        <div class="message agent">Pianpian is awake. Try: 检查一下当前项目状态和记忆统计。 Or ask: Why did you remember memory.stats?</div>
+        <div class="message agent">我在。</div>
       </main>
       <form class="composer" id="form">
         <textarea id="input" placeholder="Talk to Pianpian..." autofocus></textarea>
@@ -533,7 +540,7 @@ function renderHtml(): string {
 
     <aside class="panel side">
       <section class="card">
-        <h2>Memory</h2>
+        <h2>记忆</h2>
         <div class="stats">
           <div class="stat"><strong id="stat-total">0</strong><span>Total</span></div>
           <div class="stat"><strong id="stat-active">0</strong><span>Active</span></div>
@@ -542,26 +549,23 @@ function renderHtml(): string {
         </div>
       </section>
       <section class="card">
-        <h2>Autonomy</h2>
+        <h2>自主</h2>
         <div id="autonomy" class="list"><div class="memory"><small>booting</small>Waiting for heartbeat state.</div></div>
         <div class="button-row">
-          <button class="small-button secondary" id="autonomy-start" type="button">Start</button>
-          <button class="small-button secondary" id="autonomy-stop" type="button">Stop</button>
-          <button class="small-button" id="autonomy-now" type="button">Think</button>
+          <button class="small-button secondary" id="autonomy-start" type="button">开始</button>
+          <button class="small-button secondary" id="autonomy-stop" type="button">暂停</button>
+          <button class="small-button" id="autonomy-now" type="button">想一下</button>
         </div>
       </section>
       <section class="card">
-        <h2>Tool Output</h2>
-        <div id="tools" class="list"><div class="memory"><small>idle</small>No tools yet.</div></div>
-      </section>
-      <section class="card">
-        <h2>Recent Memory</h2>
+        <h2>最近记忆</h2>
         <div id="memories" class="list"></div>
       </section>
       <section class="card">
-        <h2>Current Context</h2>
+        <h2>本轮状态</h2>
         <div id="context" class="context-list">
-          <div class="memory"><small>idle</small>No context yet.</div>
+          <div id="tools" class="list"><div class="memory"><small>idle</small>本轮没有工具输出。</div></div>
+          <div class="memory"><small>context</small>还没有本轮上下文。</div>
         </div>
       </section>
     </aside>
@@ -596,8 +600,13 @@ function renderHtml(): string {
         const background = Array.isArray(result.backgroundJobs) && result.backgroundJobs.length > 0
           ? " · bg: " + result.backgroundJobs.map((job) => job.agentId).join(", ")
           : "";
-        agents.textContent = "agents: " + result.route.selectedAgentIds.join(", ") + background;
-        for (const reply of result.replies) appendMessage("agent", reply);
+        agents.textContent = "agents: " + compactAgents(result.route.selectedAgentIds) + background;
+        const replies = result.replies.filter(shouldShowReply);
+        if (replies.length > 0) {
+          for (const reply of replies) appendMessage("agent", reply);
+        } else if (result.tools && result.tools.length > 0) {
+          appendMessage("agent", summarizeToolsForChat(result.tools));
+        }
         renderTools(result.tools);
         renderStats(result.stats);
         renderMemories(result.memories);
@@ -668,11 +677,11 @@ function renderHtml(): string {
     function renderTools(items) {
       tools.innerHTML = "";
       if (!items.length) {
-        tools.appendChild(memoryNode("idle", "No tools in this cycle."));
+        tools.appendChild(memoryNode("idle", "\u672c\u8f6e\u6ca1\u6709\u5de5\u5177\u8f93\u51fa\u3002"));
         return;
       }
-      for (const item of items) {
-        const node = memoryNode(item.toolName + " · " + item.status, item.output);
+      for (const item of items.slice(0, 4)) {
+        const node = memoryNode(item.toolName + " - " + item.status, compactToolOutput(item));
         tools.appendChild(node);
       }
     }
@@ -680,11 +689,11 @@ function renderHtml(): string {
     function renderMemories(items) {
       memories.innerHTML = "";
       if (!items.length) {
-        memories.appendChild(memoryNode("empty", "No memories yet."));
+        memories.appendChild(memoryNode("empty", "\u8fd8\u6ca1\u6709\u8bb0\u5fc6\u3002"));
         return;
       }
-      for (const item of items) {
-        memories.appendChild(memoryNode(item.kind + " · " + item.status, item.text));
+      for (const item of items.slice(0, 8)) {
+        memories.appendChild(memoryNode(item.kind + " - " + item.status, item.text));
       }
     }
 
@@ -701,7 +710,7 @@ function renderHtml(): string {
         "total " + (status.totalHeartbeats || 0),
         "drive " + drive,
         "last " + last,
-      ].join(" ? ");
+      ].join(" - ");
       autonomyPanel.appendChild(memoryNode(status.lastError ? "error" : "state", line));
       if (state && state.lastHeartbeat) {
         const cycle = state.lastHeartbeat.cycle;
@@ -715,7 +724,7 @@ function renderHtml(): string {
           ? innerThought.content
           : cycle && Array.isArray(cycle.replies) && cycle.replies.length > 0
           ? cycle.replies.join("\\n")
-          : "No outward reply; she only updated inner memory.";
+          : "\u6ca1\u6709\u5bf9\u5916\u56de\u590d\uff0c\u53ea\u66f4\u65b0\u4e86\u5185\u90e8\u8bb0\u5fc6\u3002";
         autonomyPanel.appendChild(memoryNode("last thought", reply));
       }
     }
@@ -723,29 +732,22 @@ function renderHtml(): string {
     function renderContext(context) {
       contextPanel.innerHTML = "";
       if (!context) {
-        contextPanel.appendChild(memoryNode("empty", "No context for this cycle."));
+        contextPanel.appendChild(memoryNode("empty", "\u8fd8\u6ca1\u6709\u672c\u8f6e\u4e0a\u4e0b\u6587\u3002"));
         return;
       }
 
       const sections = [
-        ["Recall Plan", formatJson({
-          recallQuery: context.recallQuery,
-          activationTrace: context.activationTrace,
-          workingMemoryFrame: context.workingMemoryFrame,
-        })],
-        ["Current Task", context.currentTask],
-        ["Inner State", context.innerState],
-        ["Working Memory", context.workingMemory],
-        ["Relevant Entities", context.relevantEntities],
-        ["Self Model", context.selfModel],
-        ["Focus Memory", context.focus],
-        ["Active Goals", context.goals],
-        ["Preferences", context.preferences],
-        ["Long-Term Memory", context.longTermMemory],
-        ["Uncertainty", context.uncertainty],
-        ["Recent Evidence", context.recentEvidence],
-        ["Context Trace", formatJson(context.trace)],
-        ["Full Prompt", context.prompt],
+        ["任务", context.currentTask],
+        ["工作记忆", context.workingMemory],
+        ["身份/关系", [context.selfModel, context.relevantEntities].filter(Boolean).join("\\n")],
+        ["焦点记忆", context.focus],
+        ["更多上下文", [
+          "Goals:\\n" + context.goals,
+          "Preferences:\\n" + context.preferences,
+          "Long-term:\\n" + context.longTermMemory,
+          "Evidence:\\n" + context.recentEvidence,
+          "Trace:\\n" + formatJson(context.trace),
+        ].join("\\n\\n")],
       ];
 
       for (const [label, text] of sections) {
@@ -755,7 +757,7 @@ function renderHtml(): string {
 
     function detailNode(label, text) {
       const node = document.createElement("details");
-      if (label === "Recall Plan" || label === "Self Model" || label === "Focus Memory") {
+      if (label === "任务" || label === "身份/关系" || label === "焦点记忆") {
         node.open = true;
       }
       const summary = document.createElement("summary");
@@ -781,6 +783,41 @@ function renderHtml(): string {
       node.appendChild(small);
       node.appendChild(body);
       return node;
+    }
+
+    function shouldShowReply(reply) {
+      const text = String(reply || "").trim();
+      if (!text) return false;
+      return ![
+        "当前意图模式",
+        "我已经从长期记忆里做了一次上下文召回",
+        "暂时没有足够的焦点记忆",
+        "Current intent mode",
+        "I recalled long-term memory",
+      ].some((marker) => text.includes(marker));
+    }
+
+    function compactAgents(agentIds) {
+      const visible = (agentIds || []).filter((agent) => !["memory-curator", "tool-reflector", "learning-evaluator"].includes(agent));
+      return visible.slice(0, 4).join(", ") + (visible.length > 4 ? " +" + (visible.length - 4) : "");
+    }
+
+    function summarizeToolsForChat(items) {
+      const failed = items.filter((item) => item.status !== "executed");
+      if (failed.length > 0) {
+        return "工具有失败：" + failed.map((item) => item.toolName).join(", ") + "。我已经把结果记下来了。";
+      }
+      return "检查完成：" + items.map((item) => item.toolName).join(", ") + "。";
+    }
+
+    function compactToolOutput(item) {
+      if (item.error) return item.error;
+      const text = String(item.output || "");
+      if (item.status === "executed" && item.toolName === "workspace.search") {
+        const lines = text.split("\\n").filter(Boolean);
+        return lines.length + " 条匹配。" + (lines.length ? "\\n" + lines.slice(0, 3).join("\\n") : "");
+      }
+      return text;
     }
 
     refresh();

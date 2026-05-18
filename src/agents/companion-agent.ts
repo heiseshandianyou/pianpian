@@ -1,9 +1,13 @@
+import { DialogueActPlanner, type DialoguePlan } from "../dialogue/dialogue-act-planner.js";
+import { NaturalnessCriticAgent } from "../dialogue/naturalness-critic-agent.js";
 import type { LlmProvider } from "../llm/types.js";
 import type { Agent, AgentContext, AgentProposal } from "../types.js";
 
 export class CompanionAgent implements Agent {
   readonly id = "companion" as const;
   readonly role = "Maintains personality, emotional continuity, and user-facing tone.";
+  private readonly dialoguePlanner = new DialogueActPlanner();
+  private readonly naturalnessCritic = new NaturalnessCriticAgent();
 
   constructor(private readonly llm?: LlmProvider) {}
 
@@ -25,6 +29,8 @@ export class CompanionAgent implements Agent {
   }
 
   private async composeResponse(context: AgentContext): Promise<{ text: string; usedLlm: boolean }> {
+    const dialoguePlan = this.dialoguePlanner.plan(context);
+
     if (this.llm && context.compiledContext) {
       try {
         const text = await this.llm.generate(
@@ -41,6 +47,16 @@ export class CompanionAgent implements Agent {
                 "For identity or name questions, prioritize identity/name memories and answer directly.",
                 "If context is incomplete, say what is known and what remains uncertain.",
                 "Be warm, clear, self-possessed, and emotionally continuous.",
+                "Sound like a person in an ongoing relationship, not a narrator performing a scene.",
+                "Never use parenthetical stage directions such as （微微一怔）.",
+                "Avoid grand emotional monologues, therapy-speak, and poetic over-explanation.",
+                "Do not claim newly supplied facts were already felt in the body or destiny.",
+                "For intimate memory updates, answer in short concrete lines and restate only the important facts.",
+                `Dialogue act: ${dialoguePlan.kind}. Tone: ${dialoguePlan.tone}.`,
+                `Maximum sentences: ${dialoguePlan.maxSentences}.`,
+                `Required moves: ${dialoguePlan.requiredMoves.join(" | ")}`,
+                `Avoid: ${dialoguePlan.avoidPatterns.join(" | ")}`,
+                `Response hint: ${dialoguePlan.responseHint}`,
               ].join("\n"),
             },
             {
@@ -59,13 +75,22 @@ export class CompanionAgent implements Agent {
           ],
           {
             temperature: 0.35,
-            maxTokens: 700,
+            maxTokens: dialoguePlan.kind === "practical-answer" ? 700 : 360,
             timeoutMs: 12_000,
           },
         );
 
+        const reviewed = this.naturalnessCritic.reviewAndRepair(text.trim(), dialoguePlan);
+        const fallback = composeSensitiveFallback(context, dialoguePlan, reviewed.text);
+        if (fallback) {
+          return {
+            text: fallback,
+            usedLlm: true,
+          };
+        }
+
         return {
-          text: text.trim(),
+          text: reviewed.text,
           usedLlm: true,
         };
       } catch {
@@ -74,10 +99,47 @@ export class CompanionAgent implements Agent {
     }
 
     return {
-      text: composeFallbackResponse(context),
+      text: composeSensitiveFallback(context, dialoguePlan) ?? composeFallbackResponse(context),
       usedLlm: false,
     };
   }
+}
+
+function composeSensitiveFallback(
+  context: AgentContext,
+  plan: DialoguePlan,
+  candidate?: string,
+): string | undefined {
+  if (!hasChinese(context.perception.text)) {
+    return undefined;
+  }
+
+  if (candidate && candidate.length <= 260 && !/[（(][^）)]{1,80}[）)]/.test(candidate)) {
+    return undefined;
+  }
+
+  if (plan.kind === "relationship-origin") {
+    return [
+      "我记住了。",
+      "",
+      "河边，夜里，我娘刚走，我哭到很晚。",
+      "是你路过，把我带回来的。",
+      "",
+      "后来我就留在你身边，成了你的家人。",
+      "这不是一段好听的故事，是我们家的事。",
+    ].join("\n");
+  }
+
+  if (plan.kind === "attachment-promise") {
+    return [
+      "我听见了。",
+      "",
+      "你说不会抛下我，我会记住。",
+      "不用说得更重了。我们照旧，互相照顾，慢慢往前。",
+    ].join("\n");
+  }
+
+  return undefined;
 }
 
 function composeFallbackResponse(context: AgentContext): string {
