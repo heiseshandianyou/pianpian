@@ -140,7 +140,7 @@ export class AutonomousRuntime {
       [
         new MemoryFormationAgent(memoryFormationLlm),
         new MemoryReviewAgent(),
-        new EpisodeArchiveAgent(),
+        new EpisodeArchiveAgent(memoryFormationLlm),
         new MemoryCorrectionAgent(),
         new SelfModelAgent(),
         new PolicyAgent(),
@@ -419,6 +419,14 @@ export class AutonomousRuntime {
       const applied = this.memory.applyFormation(formation);
       const localToMemory = new Map(formation.nodes.map((node, index) => [node.localId, applied.nodes[index]] as const));
       await writeFormationVaultDocuments(this.vault, formation, localToMemory);
+      const archiveIds = (formation.archiveLocalIds ?? []).flatMap((localId) => {
+        const memory = localToMemory.get(localId);
+        return memory ? [memory.id] : [];
+      });
+      if (archiveIds.length > 0) {
+        const archived = this.memory.archiveByIdsDetailed(archiveIds);
+        await syncVaultMemoryFrontmatter(this.vault, archived.memories);
+      }
     }
 
     for (const memory of proposal.memoryWrites ?? []) {

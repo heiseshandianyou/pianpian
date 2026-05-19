@@ -113,16 +113,17 @@ Markdown is the graph source of truth and the runtime index is rebuilt from read
 
 ### Episode To Dossier Archiving
 
-`EpisodeArchiveAgent` is the first bridge from raw remembered moments to readable long-term dossiers. It watches active episode memories after memory formation, detects mature clusters, writes a durable Markdown file, creates a pinned semantic node for recall, and archives the source episodes so ordinary recall does not drown in raw logs.
+`EpisodeArchiveAgent` is the bridge from raw remembered moments to readable long-term dossiers. It watches active episode memories after memory formation, asks an LLM to decide whether the episodes have matured into a dossier, writes a durable Markdown file, creates a stable node for recall, and archives source episodes that the dossier has absorbed as evidence.
 
-Current archive types:
+The code does not hardcode dossier categories. Instead, agents follow the Memory Vault File Spec:
 
-- relationship dossiers, such as `relationships/卢静涵-林翩翩.md`, for first meeting, rescue, family, and mutual care memories.
-- person dossiers, such as `people/卢静涵.md`, for stable user preferences like listening to pipa.
-- place dossiers, such as `places/扬州.md`, for city, food, history, and map-linked knowledge.
-- literature dossiers, such as `literature/青玉案-元夕.md`, for taught poems, authors, imagery, and personal meaning.
+- readable Markdown with one evolving dossier per durable subject.
+- agent-chosen paths such as `people/`, `relationships/`, `places/`, `works/`, `projects/`, or any better folder the memory calls for.
+- sections chosen by the agent, with recommended sections like `Stable Memory`, `Evidence`, `Recall Cues`, `Open Questions`, and `Related`.
+- graph edges from source episodes to durable nodes for provenance and spreading activation.
+- `archiveLocalIds` or source episode archiving when an episode becomes evidence rather than primary long-term recall.
 
-The archive keeps evidence episode IDs inside the Markdown body and adds `reinforces` edges from each source episode to the dossier node. Future archive types should be added as focused rules rather than mixed into generic memory formation.
+This keeps the format strict while leaving semantic judgment to the memory agents.
 
 ## Entity Graph
 

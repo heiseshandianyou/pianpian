@@ -20,6 +20,7 @@
     "memory-inspector-demo": "npm run build && node dist/demos/memory-inspector-demo.js",
     "memory-inspector-tool-demo": "npm run build && node dist/demos/memory-inspector-tool-demo.js",
     "markdown-graph-memory-demo": "npm run build && node dist/demos/markdown-graph-memory-demo.js",
+    "dossier-formation-protocol-demo": "npm run build && node dist/demos/dossier-formation-protocol-demo.js",
     "episode-archive-demo": "npm run build && node dist/demos/episode-archive-demo.js",
     "episode-archive-types-demo": "npm run build && node dist/demos/episode-archive-types-demo.js",
     "markdown-memory-vault-demo": "npm run build && node dist/demos/markdown-memory-vault-demo.js",

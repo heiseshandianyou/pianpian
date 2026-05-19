@@ -1,0 +1,17 @@
+export const MEMORY_VAULT_FILE_SPEC = [
+  "Memory Vault File Spec:",
+  "- The Vault is made of readable Markdown dossier files plus graph metadata.",
+  "- Code must not hardcode human memory categories. The memory agent chooses the file path and structure from meaning.",
+  "- Prefer one evolving dossier per durable subject instead of one file per sentence.",
+  "- Valid paths are relative Markdown paths. Use stable folders when useful, for example people/, relationships/, places/, works/, projects/, identity/, skills/, concepts/, goals/, but invent a better folder if the memory calls for it.",
+  "- A dossier body should start with one H1 title, then concise sections chosen by the agent.",
+  "- Recommended sections when useful: Stable Memory, Evidence, Recall Cues, Open Questions, Related.",
+  "- Stable Memory is the distilled meaning that should be recalled later.",
+  "- Evidence keeps short source snippets or episode IDs so the memory remains auditable.",
+  "- Recall Cues are natural phrases that should activate the dossier.",
+  "- Open Questions records uncertainty instead of fabricating details.",
+  "- Related can use wiki links like [[people/name]] or plain names to support graph association.",
+  "- Tags should be semantic cues, not UI labels.",
+  "- If a new experience updates an existing dossier, write the same path and preserve or revise the dossier coherently.",
+  "- If the dossier absorbs the source episode, set archiveLocalIds to include 'episode'. Episode then remains evidence, not primary long-term recall.",
+].join("\n");

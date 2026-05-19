@@ -231,6 +231,7 @@ export interface MemoryFormationPlan {
   entities?: NewEntity[];
   memoryEntityLinks?: NewMemoryEntityLink[];
   vaultWrites?: NewVaultDocument[];
+  archiveLocalIds?: string[];
   rationale: string;
 }
 

@@ -1,5 +1,6 @@
 import { EntityExtractionAgent } from "./entity-extraction-agent.js";
 import type { LlmProvider } from "../llm/types.js";
+import { MEMORY_VAULT_FILE_SPEC } from "../memory/memory-vault-file-spec.js";
 import { relationshipMemoryNodes } from "../memory/relationship-memory-schema.js";
 import type {
   Agent,
@@ -49,12 +50,15 @@ export class MemoryFormationAgent implements Agent {
               "Return only valid JSON.",
               "Preserve the user's language for memory text; do not translate Chinese experiences into English unless the user used English.",
               "Always include one episode node with localId 'episode'.",
+              "Episode is an intermediate evidence artifact. When you create or update durable dossier memory for the same experience, include archiveLocalIds: ['episode'] so the raw episode stops competing with long-term recall.",
               "Create durable semantic, goal, preference, reflection, or procedure nodes only when justified.",
               "Do not create a durable node if a retrieved memory already states the same fact; prefer reinforcing or linking to the existing memory.",
-              "When a durable memory belongs to a person, relationship, place, preference, or identity dossier, include a Markdown vaultWrites entry that can be maintained as a readable file.",
+              "When a durable memory belongs in a dossier, include a Markdown vaultWrites entry following the Memory Vault File Spec below. You decide the dossier type, path, title, sections, tags, and relations from meaning, not from a hardcoded category list.",
               "Connect derived nodes to the episode with derived_from edges.",
               "Allowed kinds: episode, semantic, goal, preference, reflection, self_model, procedure, relationship.",
               "Allowed relations: supports, contradicts, elaborates, same_goal, same_entity, temporal_neighbor, derived_from, reinforces.",
+              "",
+              MEMORY_VAULT_FILE_SPEC,
             ].join("\n"),
           },
           {
@@ -104,6 +108,7 @@ export class MemoryFormationAgent implements Agent {
                     kind: "episode|semantic|goal|preference|reflection|self_model|procedure|relationship optional",
                   },
                 ],
+                archiveLocalIds: ["episode optional when durable dossier absorbs the source episode as evidence"],
                 rationale: "string",
               },
             }),
@@ -479,8 +484,18 @@ function normalizeFormationPlan(plan: Partial<MemoryFormationPlan>, context: Age
     nodes,
     edges,
     vaultWrites: normalizeVaultWrites(plan.vaultWrites, localIds),
+    archiveLocalIds: normalizeArchiveLocalIds(plan.archiveLocalIds, localIds),
     rationale: typeof plan.rationale === "string" ? plan.rationale : "LLM-generated memory formation plan.",
   };
+}
+
+function normalizeArchiveLocalIds(value: unknown, localIds: Set<string>): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const ids = value.filter((item): item is string => typeof item === "string" && localIds.has(item));
+  return ids.length > 0 ? [...new Set(ids)] : undefined;
 }
 
 function normalizeVaultWrites(value: unknown, localIds: Set<string>): NewVaultDocument[] | undefined {

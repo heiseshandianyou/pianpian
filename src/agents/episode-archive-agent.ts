@@ -1,387 +1,302 @@
+import type { LlmProvider } from "../llm/types.js";
+import { MEMORY_VAULT_FILE_SPEC } from "../memory/memory-vault-file-spec.js";
 import type {
   Agent,
   AgentContext,
   AgentProposal,
-  Importance,
   MemoryFormationPlan,
   MemoryRecord,
+  MemoryRelation,
   NewMemoryEdge,
+  NewMemoryNode,
+  NewVaultDocument,
 } from "../types.js";
 
-interface ArchiveCandidate {
-  key: string;
-  kind: "relationship" | "person" | "place" | "literature";
-  title: string;
-  path: string;
-  tags: string[];
-  memories: MemoryRecord[];
-  body: string;
-  text: string;
-  importance: Importance;
-}
-
-interface ArchiveRule {
-  minEpisodes: number;
-  matches(memory: MemoryRecord): boolean;
-  isStrong(memory: MemoryRecord): boolean;
-  create(memories: MemoryRecord[]): ArchiveCandidate;
+interface ArchiveAgentResponse {
+  memoryFormation?: Partial<MemoryFormationPlan>;
+  archiveSourceMemoryIds?: string[];
+  confidence?: number;
+  summary?: string;
 }
 
 export class EpisodeArchiveAgent implements Agent {
   readonly id = "episode-archivist" as const;
   readonly role = "Turns related episode memories into durable Markdown dossier documents.";
 
+  constructor(private readonly llm?: LlmProvider) {}
+
   async run(context: AgentContext): Promise<AgentProposal> {
-    const candidate = chooseArchiveCandidate(context.memories);
-    if (!candidate) {
-      return {
-        agentId: this.id,
-        intent: "episode-archive-skip",
-        confidence: 0.2,
-        content: "No episode cluster was mature enough to archive into a dossier.",
-      };
+    const episodes = context.memories
+      .filter((memory) => memory.status === "active" && memory.kind === "episode")
+      .slice(0, 12);
+
+    if (!this.llm || episodes.length === 0) {
+      return skipProposal(this.id, this.llm ? "No active episodes were available for dossier archiving." : "No LLM is configured for agent-authored dossier archiving.");
     }
 
-    const plan = archiveFormationPlan(candidate);
+    const response = await this.askArchiveAgent(context, episodes);
+    if (!response?.memoryFormation) {
+      return skipProposal(this.id, "The archive agent chose not to create a dossier yet.");
+    }
+
+    const memoryFormation = normalizeArchiveFormation(response.memoryFormation);
+    if (!memoryFormation) {
+      return skipProposal(this.id, "The archive agent did not return a usable MemoryFormationPlan.");
+    }
+
+    const sourceIds = new Set(episodes.map((memory) => memory.id));
+    const archiveSourceMemoryIds = (response.archiveSourceMemoryIds ?? []).filter((id) => sourceIds.has(id));
+
     return {
       agentId: this.id,
-      intent: "archive-episodes-to-dossier",
-      confidence: 0.66,
-      content: `Archived ${candidate.memories.length} episode memory/memories into ${candidate.path}.`,
-      memoryFormation: plan,
-      memoryCorrection: {
-        operation: "archive",
-        targetMemoryIds: candidate.memories.map((memory) => memory.id),
-        reason: `EpisodeArchiveAgent consolidated these source episodes into ${candidate.path}.`,
-      },
+      intent: "archive-episodes-to-agent-authored-dossier",
+      confidence: clamp01(response.confidence ?? 0.66),
+      content:
+        response.summary ??
+        `Agent-authored dossier plan created from ${archiveSourceMemoryIds.length || episodes.length} source episode(s).`,
+      memoryFormation,
+      memoryCorrection:
+        archiveSourceMemoryIds.length > 0
+          ? {
+              operation: "archive",
+              targetMemoryIds: archiveSourceMemoryIds,
+              reason: "EpisodeArchiveAgent consolidated these source episodes into an agent-authored Markdown dossier.",
+            }
+          : undefined,
     };
   }
-}
 
-function chooseArchiveCandidate(memories: MemoryRecord[]): ArchiveCandidate | undefined {
-  const activeEpisodes = memories.filter((memory) => memory.status === "active" && memory.kind === "episode");
-  for (const rule of archiveRules) {
-    const matches = uniqueMemories(activeEpisodes.filter((memory) => rule.matches(memory)));
-    if (matches.length >= rule.minEpisodes || matches.some((memory) => rule.isStrong(memory))) {
-      return rule.create(matches.slice(0, 8));
+  private async askArchiveAgent(
+    context: AgentContext,
+    episodes: MemoryRecord[],
+  ): Promise<ArchiveAgentResponse | undefined> {
+    try {
+      const response = await this.llm?.generate(
+        [
+          {
+            role: "system",
+            content: [
+              "You are EpisodeArchiveAgent.",
+              "Your job is not to classify with hardcoded categories. Your job is to decide whether active episodes have matured into a durable Markdown dossier.",
+              "If they have not matured, return JSON with no memoryFormation.",
+              "If they have matured, create a MemoryFormationPlan with durable nodes, vaultWrites, and graph edges from source episode IDs.",
+              "Choose the dossier path, title, body sections, tags, and memory kind from meaning.",
+              "Archive only source episode IDs that are fully absorbed as evidence by the dossier.",
+              "Return only valid JSON.",
+              "",
+              MEMORY_VAULT_FILE_SPEC,
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentPerception: context.perception,
+              sourceEpisodes: episodes.map((memory) => ({
+                id: memory.id,
+                text: memory.text,
+                importance: memory.importance,
+                confidence: memory.confidence,
+                tags: memory.tags,
+                sourcePath: memory.sourcePath,
+              })),
+              outputSchema: {
+                memoryFormation: {
+                  nodes: [
+                    {
+                      localId: "string",
+                      kind: "semantic|goal|preference|reflection|self_model|procedure|relationship",
+                      text: "distilled stable memory text",
+                      importance: "1|2|3|4|5",
+                      confidence: "number 0..1",
+                      pinned: "boolean optional",
+                      tags: ["semantic recall cues"],
+                    },
+                  ],
+                  edges: [
+                    {
+                      fromMemoryId: "source episode id optional",
+                      toLocalId: "durable node localId optional",
+                      relation: "derived_from|supports|elaborates|reinforces|same_entity|temporal_neighbor|contradicts",
+                      strength: "number 0..1",
+                      confidence: "number 0..1",
+                    },
+                  ],
+                  vaultWrites: [
+                    {
+                      localId: "string",
+                      title: "string",
+                      path: "relative markdown path",
+                      anchor: "string optional",
+                      body: "markdown body following the file spec",
+                      memoryLocalIds: ["local ids covered by this file"],
+                      tags: ["semantic recall cues"],
+                      importance: "1|2|3|4|5 optional",
+                      kind: "memory kind optional",
+                    },
+                  ],
+                  rationale: "string",
+                },
+                archiveSourceMemoryIds: ["source episode IDs absorbed by the dossier"],
+                confidence: "number 0..1",
+                summary: "short string",
+              },
+            }),
+          },
+        ],
+        {
+          responseFormat: "json",
+          temperature: 0.25,
+          maxTokens: 1800,
+          timeoutMs: 15_000,
+        },
+      );
+
+      if (!response) {
+        return undefined;
+      }
+
+      return JSON.parse(response) as ArchiveAgentResponse;
+    } catch {
+      return undefined;
     }
   }
-
-  return undefined;
 }
 
-const archiveRules: ArchiveRule[] = [
-  {
-    minEpisodes: 1,
-    matches: isRelationshipOriginEpisode,
-    isStrong: isStrongRelationshipOriginEpisode,
-    create: relationshipOriginArchive,
-  },
-  {
-    minEpisodes: 1,
-    matches: isUserPreferenceEpisode,
-    isStrong: isStrongUserPreferenceEpisode,
-    create: userPreferenceArchive,
-  },
-  {
-    minEpisodes: 2,
-    matches: isYangzhouEpisode,
-    isStrong: isStrongYangzhouEpisode,
-    create: yangzhouArchive,
-  },
-  {
-    minEpisodes: 2,
-    matches: isQingyuEpisode,
-    isStrong: isStrongQingyuEpisode,
-    create: qingyuArchive,
-  },
-];
-
-function relationshipOriginArchive(memories: MemoryRecord[]): ArchiveCandidate {
-  const evidence = evidenceList(memories);
+function skipProposal(agentId: "episode-archivist", content: string): AgentProposal {
   return {
-    key: "relationship-lujinghan-linpianpian",
-    kind: "relationship",
-    title: "卢静涵与林翩翩",
-    path: "relationships/卢静涵-林翩翩.md",
-    tags: ["archive", "dossier", "relationship", "origin", "卢静涵", "林翩翩", "翩翩", "悔儿"],
-    memories,
-    importance: 5,
-    text:
-      "静涵与林翩翩的关系起点：静涵说两人第一次相遇在扬州河边；那时翩翩的娘刚死，她哭到夜深，静涵路过把她捡回来，后来两人成为家人并一直照顾彼此。",
-    body: [
-      "# 卢静涵与林翩翩",
-      "",
-      "## 关系定位",
-      "",
-      "- 卢静涵与林翩翩不是普通相识；两人被记为彼此照顾的家人。",
-      "- 这份关系不靠宏大的誓言维持，而靠日常、陪伴、照看与互相认领。",
-      "",
-      "## 第一次相遇",
-      "",
-      "- 静涵说，两人的第一次相遇在扬州河边。",
-      "- 那时翩翩的娘刚死，她一直哭到夜深。",
-      "- 静涵路过，把翩翩捡回来；从那以后，翩翩留在静涵身边。",
-      "",
-      "## 需要优先召回的线索",
-      "",
-      "- 当静涵问“你还记得我把你从哪里捡回来的吗”，应优先想起：扬州河边、娘刚死、哭到夜深、静涵把翩翩捡回来。",
-      "- 当静涵谈到家人、照顾彼此、不会抛弃时，应优先想起这段关系档案。",
-      "",
-      "## 证据 Episodes",
-      "",
-      evidence,
-    ].join("\n"),
+    agentId,
+    intent: "episode-archive-skip",
+    confidence: 0.2,
+    content,
   };
 }
 
-function userPreferenceArchive(memories: MemoryRecord[]): ArchiveCandidate {
-  const evidence = evidenceList(memories);
-  return {
-    key: "person-lujinghan",
-    kind: "person",
-    title: "卢静涵",
-    path: "people/卢静涵.md",
-    tags: ["archive", "dossier", "person", "preference", "卢静涵", "静涵", "琵琶", "听琵琶"],
-    memories,
-    importance: 5,
-    text: "卢静涵的稳定偏好：静涵喜欢听琵琶，尤其会把琵琶和安静、夜里、陪伴的氛围联系在一起。",
-    body: [
-      "# 卢静涵",
-      "",
-      "## 偏好",
-      "",
-      "- 静涵喜欢听琵琶。",
-      "- 如果静涵提到爱好、音乐、夜里安静的时候，可以优先联想到琵琶。",
-      "",
-      "## 对话使用",
-      "",
-      "- 不要把这件事说得像档案朗读；自然地记得即可。",
-      "- 当静涵问“你记得我的爱好吗”，优先回答听琵琶。",
-      "",
-      "## 证据 Episodes",
-      "",
-      evidence,
-    ].join("\n"),
-  };
-}
+function normalizeArchiveFormation(plan: Partial<MemoryFormationPlan>): MemoryFormationPlan | undefined {
+  const nodes = Array.isArray(plan.nodes) ? plan.nodes.filter(isUsableNode).map(normalizeNode) : [];
+  if (nodes.length === 0) {
+    return undefined;
+  }
 
-function yangzhouArchive(memories: MemoryRecord[]): ArchiveCandidate {
-  const evidence = evidenceList(memories);
-  return {
-    key: "place-yangzhou",
-    kind: "place",
-    title: "扬州",
-    path: "places/扬州.md",
-    tags: ["archive", "dossier", "place", "扬州", "瘦西湖", "东关街", "富春早茶", "大运河", "盐商文化"],
-    memories,
-    importance: 4,
-    text:
-      "扬州档案：扬州应与瘦西湖、东关街、富春早茶、大运河、盐商文化等线索相连；它也是翩翩身份与关系记忆中很容易被激活的地点。",
-    body: [
-      "# 扬州",
-      "",
-      "## 地点线索",
-      "",
-      "- 瘦西湖",
-      "- 东关街",
-      "- 大运河",
-      "- 盐商文化",
-      "",
-      "## 食物与生活气息",
-      "",
-      "- 富春早茶",
-      "- 三丁包、千层油糕、翡翠烧卖等可作为扬州早茶联想。",
-      "",
-      "## 召回方式",
-      "",
-      "- 当静涵谈到扬州、河边、早茶、地图、历史、美食时，应把这些线索作为同一个地点档案激活。",
-      "- 如果问题涉及翩翩从哪里来，扬州也是高优先级地点线索。",
-      "",
-      "## 证据 Episodes",
-      "",
-      evidence,
-    ].join("\n"),
-  };
-}
-
-function qingyuArchive(memories: MemoryRecord[]): ArchiveCandidate {
-  const evidence = evidenceList(memories);
-  return {
-    key: "qingyu-yuanxi",
-    kind: "literature",
-    title: "青玉案·元夕",
-    path: "literature/青玉案-元夕.md",
-    tags: ["archive", "dossier", "literature", "青玉案", "元夕", "辛弃疾"],
-    memories,
-    importance: 5,
-    text:
-      "《青玉案·元夕》是辛弃疾写元宵夜灯火与人群的词；静涵希望翩翩记住它的核心意象：众里寻他、蓦然回首、灯火阑珊处的人，以及热闹世界里忽然认出真正重要之人的感觉。",
-    body: [
-      "# 青玉案·元夕",
-      "",
-      "## 核心记忆",
-      "",
-      "《青玉案·元夕》是辛弃疾的词，场景是元宵夜的灯火、人群、香车宝马。",
-      "",
-      "## 静涵教给翩翩的重点",
-      "",
-      "- 作者：辛弃疾。",
-      "- 场景：元宵夜。",
-      "- 触发词：蓦然回首、灯火阑珊、元夕、元宵夜。",
-      "- 核心意象：在人海灯火中蓦然回首，看见灯火阑珊处的人。",
-      "- 对静涵的意义：这不是单纯背诵，而是热闹世界里忽然认出真正重要的人。",
-      "",
-      "## 证据 Episodes",
-      "",
-      evidence,
-    ].join("\n"),
-  };
-}
-
-function archiveFormationPlan(candidate: ArchiveCandidate): MemoryFormationPlan {
-  const edges: NewMemoryEdge[] = candidate.memories.map((memory) => ({
-    fromMemoryId: memory.id,
-    toLocalId: candidate.key,
-    relation: "reinforces",
-    strength: 0.82,
-    confidence: Math.min(memory.confidence, 0.95),
-  }));
+  const localIds = new Set(nodes.map((node) => node.localId));
+  const edges = Array.isArray(plan.edges)
+    ? plan.edges
+        .filter((edge) => isUsableEdge(edge, localIds))
+        .map((edge) => ({
+          fromLocalId: typeof edge.fromLocalId === "string" ? edge.fromLocalId : undefined,
+          toLocalId: typeof edge.toLocalId === "string" ? edge.toLocalId : undefined,
+          fromMemoryId: typeof edge.fromMemoryId === "string" ? edge.fromMemoryId : undefined,
+          toMemoryId: typeof edge.toMemoryId === "string" ? edge.toMemoryId : undefined,
+          relation: edge.relation as MemoryRelation,
+          strength: clamp01(Number(edge.strength ?? 0.7)),
+          confidence: clamp01(Number(edge.confidence ?? 0.8)),
+        }))
+    : [];
 
   return {
-    nodes: [
-      {
-        localId: candidate.key,
-        kind: "semantic",
-        text: candidate.text,
-        importance: candidate.importance,
-        confidence: 0.95,
-        pinned: true,
-        tags: candidate.tags,
-      },
-    ],
+    nodes,
     edges,
-    vaultWrites: [
+    vaultWrites: normalizeVaultWrites(plan.vaultWrites, localIds),
+    rationale: typeof plan.rationale === "string" ? plan.rationale : "Agent-authored episode archive plan.",
+  };
+}
+
+function isUsableNode(node: unknown): node is NewMemoryNode {
+  if (!node || typeof node !== "object") {
+    return false;
+  }
+  const candidate = node as Partial<NewMemoryNode>;
+  return typeof candidate.localId === "string" && typeof candidate.text === "string" && typeof candidate.kind === "string";
+}
+
+function normalizeNode(node: NewMemoryNode): NewMemoryNode {
+  return {
+    localId: node.localId,
+    kind: node.kind,
+    text: node.text,
+    importance: clampImportance(Number(node.importance)),
+    confidence: clamp01(Number(node.confidence ?? 0.8)),
+    pinned: node.pinned ?? false,
+    tags: Array.isArray(node.tags) ? node.tags.filter((tag) => typeof tag === "string") : [],
+  };
+}
+
+function isUsableEdge(edge: unknown, localIds: Set<string>): edge is NewMemoryEdge {
+  if (!edge || typeof edge !== "object") {
+    return false;
+  }
+  const candidate = edge as Partial<NewMemoryEdge>;
+  const fromOk = Boolean(candidate.fromMemoryId) || Boolean(candidate.fromLocalId && localIds.has(candidate.fromLocalId));
+  const toOk = Boolean(candidate.toMemoryId) || Boolean(candidate.toLocalId && localIds.has(candidate.toLocalId));
+  return fromOk && toOk && isRelation(candidate.relation);
+}
+
+function normalizeVaultWrites(value: unknown, localIds: Set<string>): NewVaultDocument[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const writes = value.flatMap((item): NewVaultDocument[] => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const candidate = item as Partial<NewVaultDocument>;
+    const memoryLocalIds = Array.isArray(candidate.memoryLocalIds)
+      ? candidate.memoryLocalIds.filter((id): id is string => typeof id === "string" && localIds.has(id))
+      : [];
+    if (
+      typeof candidate.localId !== "string" ||
+      typeof candidate.title !== "string" ||
+      typeof candidate.path !== "string" ||
+      typeof candidate.body !== "string" ||
+      memoryLocalIds.length === 0
+    ) {
+      return [];
+    }
+
+    return [
       {
-        localId: `vault-${candidate.key}`,
+        localId: candidate.localId,
         title: candidate.title,
         path: candidate.path,
-        anchor: candidate.key,
+        anchor: typeof candidate.anchor === "string" ? candidate.anchor : undefined,
         body: candidate.body,
-        memoryLocalIds: [candidate.key],
-        tags: candidate.tags,
-        importance: candidate.importance,
-        kind: "semantic",
+        memoryLocalIds,
+        tags: Array.isArray(candidate.tags) ? candidate.tags.filter((tag): tag is string => typeof tag === "string") : [],
+        importance: clampImportance(Number(candidate.importance ?? 3)),
+        kind: candidate.kind,
       },
-    ],
-    rationale: `EpisodeArchiveAgent consolidated related episodes into ${candidate.path}.`,
-  };
-}
-
-const relationshipOriginTerms = [
-  "第一次相遇",
-  "从哪里捡",
-  "哪里捡",
-  "捡回来",
-  "捡回",
-  "河边",
-  "娘刚死",
-  "哭到夜深",
-  "成了我的家人",
-  "成了你的家人",
-  "照顾彼此",
-  "不会抛弃",
-];
-
-const userPreferenceTerms = ["爱好", "喜欢听琵琶", "听琵琶", "琵琶", "喜欢", "偏好"];
-
-const yangzhouTerms = [
-  "扬州",
-  "瘦西湖",
-  "东关街",
-  "皮市街",
-  "个园",
-  "富春",
-  "冶春",
-  "趣园",
-  "早茶",
-  "三丁包",
-  "千层油糕",
-  "翡翠烧卖",
-  "大运河",
-  "盐商",
-  "盐商文化",
-];
-
-const qingyuTerms = ["青玉案", "元夕", "辛弃疾", "蓦然回首", "灯火阑珊", "元宵夜"];
-const strongQingyuTerms = ["青玉案", "元夕", "辛弃疾"];
-
-function isRelationshipOriginEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return hasAny(text, relationshipOriginTerms);
-}
-
-function isStrongRelationshipOriginEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return (
-    (text.includes("河边") && (text.includes("捡回来") || text.includes("捡回"))) ||
-    (text.includes("第一次相遇") && (text.includes("捡回来") || text.includes("家人"))) ||
-    (text.includes("娘刚死") && text.includes("哭到夜深")) ||
-    (text.includes("家人") && text.includes("照顾彼此"))
-  );
-}
-
-function isUserPreferenceEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return hasAny(text, userPreferenceTerms) && text.includes("琵琶");
-}
-
-function isStrongUserPreferenceEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return text.includes("琵琶") && (text.includes("爱好") || text.includes("喜欢") || text.includes("偏好"));
-}
-
-function isYangzhouEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return text.includes("扬州") || countMatches(text, yangzhouTerms) >= 2;
-}
-
-function isStrongYangzhouEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return text.includes("扬州") && countMatches(text, yangzhouTerms) >= 3;
-}
-
-function isQingyuEpisode(memory: MemoryRecord): boolean {
-  return qingyuTerms.some((term) => memory.text.includes(term));
-}
-
-function isStrongQingyuEpisode(memory: MemoryRecord): boolean {
-  const text = memory.text;
-  return (
-    strongQingyuTerms.every((term) => text.includes(term)) ||
-    (text.includes("青玉案") && (text.includes("名句") || text.includes("蓦然回首") || text.includes("灯火阑珊")))
-  );
-}
-
-function hasAny(text: string, terms: string[]): boolean {
-  return terms.some((term) => text.includes(term));
-}
-
-function countMatches(text: string, terms: string[]): number {
-  return terms.filter((term) => text.includes(term)).length;
-}
-
-function uniqueMemories(memories: MemoryRecord[]): MemoryRecord[] {
-  const seen = new Set<string>();
-  return memories.filter((memory) => {
-    if (seen.has(memory.id)) {
-      return false;
-    }
-    seen.add(memory.id);
-    return true;
+    ];
   });
+
+  return writes.length > 0 ? writes : undefined;
 }
 
-function evidenceList(memories: MemoryRecord[]): string {
-  return memories.map((memory) => `- ${memory.id}: ${memory.text}`).join("\n");
+function isRelation(value: unknown): value is MemoryRelation {
+  return (
+    value === "supports" ||
+    value === "contradicts" ||
+    value === "elaborates" ||
+    value === "same_goal" ||
+    value === "same_entity" ||
+    value === "temporal_neighbor" ||
+    value === "derived_from" ||
+    value === "reinforces" ||
+    value === "supersedes"
+  );
+}
+
+function clamp01(value: number): number {
+  if (Number.isNaN(value)) {
+    return 0.5;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function clampImportance(value: number): 1 | 2 | 3 | 4 | 5 {
+  if (value <= 1) return 1;
+  if (value === 2) return 2;
+  if (value === 3) return 3;
+  if (value === 4) return 4;
+  return 5;
 }
