@@ -1,6 +1,6 @@
 import { AutonomousRuntime, MemoryStore } from "../index.js";
 
-const memory = new MemoryStore("data/pianpian-self-model-demo.sqlite");
+const memory = new MemoryStore("data/pianpian-self-model-demo-vault");
 const runtime = new AutonomousRuntime(memory, undefined, {
   useConfiguredLlm: false,
 });

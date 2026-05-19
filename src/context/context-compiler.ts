@@ -30,6 +30,7 @@ export class ContextCompiler {
     const nodes = workingMemory
       ? workingMemory.slots.map((slot) => slot.node)
       : dedupeNodes([...graph.focusNodes, ...graph.supportNodes]);
+    const contentNodes = nodes.filter((node) => !isOperationalLogNode(node));
     const trace: ContextTrace[] = [];
 
     const relevantEntities = formatEntities(graph.entityNodes, trace);
@@ -40,7 +41,7 @@ export class ContextCompiler {
           trace,
         )
       : takeSection(
-          nodes,
+          contentNodes,
           ["self_model", "goal", "semantic", "preference", "reflection", "episode"],
           options.maxFocusItems,
           "focus",
@@ -48,23 +49,23 @@ export class ContextCompiler {
         );
     const selfModel = workingMemory
       ? formatSlots(slotsFor(workingMemory, ["identity"], 6), "selfModel", trace)
-      : takeSection(nodes, ["self_model"], 6, "selfModel", trace);
+      : takeSection(contentNodes, ["self_model"], 6, "selfModel", trace);
     const goals = workingMemory
       ? formatSlots(slotsFor(workingMemory, ["goals"], 5), "goals", trace)
-      : takeSection(nodes, ["goal"], 5, "goals", trace);
+      : takeSection(contentNodes, ["goal"], 5, "goals", trace);
     const preferences = workingMemory
       ? formatSlots(slotsFor(workingMemory, ["preferences"], 5), "preferences", trace)
-      : takeSection(nodes, ["preference"], 5, "preferences", trace);
+      : takeSection(contentNodes, ["preference"], 5, "preferences", trace);
     const longTermMemory = workingMemory
       ? formatSlots(
-          slotsFor(workingMemory, ["topic", "background", "procedures"], options.maxLongTermItems).filter((slot) =>
+          slotsFor(workingMemory, ["topic", "relationship", "background", "procedures"], options.maxLongTermItems).filter((slot) =>
             ["semantic", "reflection", "procedure", "relationship"].includes(slot.node.memory.kind),
           ),
           "longTermMemory",
           trace,
         )
       : takeSection(
-          nodes,
+          contentNodes,
           ["semantic", "reflection"],
           options.maxLongTermItems,
           "longTermMemory",
@@ -73,7 +74,7 @@ export class ContextCompiler {
     const recentEvidence = workingMemory
       ? formatSlots(slotsFor(workingMemory, ["evidence"], options.maxEvidenceItems), "recentEvidence", trace)
       : takeSection(
-          nodes,
+          contentNodes,
           ["episode"],
           options.maxEvidenceItems,
           "recentEvidence",
@@ -295,6 +296,23 @@ function formatInnerState(innerState?: InnerState): string {
 
 function normalizeText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isOperationalLogNode(node: ActivatedMemoryNode): boolean {
+  const text = node.memory.text.toLowerCase();
+  const tags = node.memory.tags.map((tag) => tag.toLowerCase());
+  return (
+    text.startsWith("action executed:") ||
+    text.startsWith("cycle ") ||
+    text.startsWith("internal heartbeat:") ||
+    text.includes("learning evaluation:") ||
+    tags.includes("action") ||
+    tags.includes("execution") ||
+    tags.includes("say") ||
+    tags.includes("cycle-evaluation") ||
+    tags.includes("heartbeat") ||
+    (tags.includes("learning") && tags.includes("cycle-evaluation"))
+  );
 }
 
 function formatEntities(

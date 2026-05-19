@@ -47,9 +47,11 @@ export class MemoryFormationAgent implements Agent {
               "You are the MemoryFormationAgent for an autonomous multi-agent system.",
               "Convert the current perception into a memory graph formation plan.",
               "Return only valid JSON.",
-              "Use concise English for memory text.",
+              "Preserve the user's language for memory text; do not translate Chinese experiences into English unless the user used English.",
               "Always include one episode node with localId 'episode'.",
               "Create durable semantic, goal, preference, reflection, or procedure nodes only when justified.",
+              "Do not create a durable node if a retrieved memory already states the same fact; prefer reinforcing or linking to the existing memory.",
+              "When a durable memory belongs to a person, relationship, place, preference, or identity dossier, include a Markdown vaultWrites entry that can be maintained as a readable file.",
               "Connect derived nodes to the episode with derived_from edges.",
               "Allowed kinds: episode, semantic, goal, preference, reflection, self_model, procedure, relationship.",
               "Allowed relations: supports, contradicts, elaborates, same_goal, same_entity, temporal_neighbor, derived_from, reinforces.",
@@ -155,7 +157,7 @@ export class MemoryFormationAgent implements Agent {
       });
     }
 
-    if (mentions(text, ["memory", "long-term", "context", "database", "filesystem"])) {
+    if (mentions(text, ["memory", "long-term", "context", "markdown", "filesystem", "vault"])) {
       nodes.push({
         localId: "memory-goal",
         kind: "goal",
@@ -209,13 +211,15 @@ function identityNodes(text: string): NewMemoryNode[] {
   }
 
   const userName =
-    capture(text, /我的名字(?:是|叫)\s*([^，。,\s]+)/u) ??
-    capture(text, /我是\s*(.+?)(?:记住|，|。|,|\s|$)/u);
+    capture(text, /我的名字(?:是|叫)\s*([^，。？！；;,\s]+)/u) ??
+    capture(text, /我叫\s*([^，。？！；;,\s]+)/u) ??
+    capture(text, /我是\s*(.+?)(?:记住|，|。|、|,|\s|$)/u);
   const assistantName =
-    capture(text, /你(?:的)?名字(?:是|叫)\s*([^，。,\s]+)/u) ??
-    capture(text, /你是\s*(.+?)(?:，|。|,|\s|$)/u);
-  const birthName = capture(text, /(?:她|你)?(?:的)?原名(?:是|叫)?\s*([^，。,\s]+)/u);
-  const stageName = capture(text, /艺名(?:是|叫)?\s*([^，。,\s]+)/u);
+    capture(text, /你的名字(?:是|叫)\s*([^，。？！；;,\s]+)/u) ??
+    capture(text, /你叫\s*([^，。？！；;,\s]+)/u) ??
+    capture(text, /你是\s*(.+?)(?:，|。|、|,|\s|$)/u);
+  const birthName = capture(text, /(?:她|你)?(?:的)?原名(?:是|叫)?\s*([^，。？！；;,\s]+)/u);
+  const stageName = capture(text, /艺名(?:是|叫)?\s*([^，。？！；;,\s]+)/u);
   const nodes: NewMemoryNode[] = [];
 
   if (userName && userName !== "谁") {
@@ -264,7 +268,8 @@ function identityNodes(text: string): NewMemoryNode[] {
       text: `The user ${userName} addresses Pianpian as ${assistantName}.`,
       importance: 5,
       confidence: 0.94,
-      tags: ["identity", "relationship", "name"],
+      pinned: true,
+      tags: ["core", "identity", "relationship", "name"],
     });
   }
 
@@ -278,7 +283,7 @@ function capture(text: string, pattern: RegExp): string | undefined {
     return undefined;
   }
 
-  return value.replace(/[，。,.!！?？].*$/u, "").trim();
+  return value.replace(/[，。？！；;,.!?].*$/u, "").trim();
 }
 
 function isQuestion(text: string): boolean {
@@ -405,7 +410,7 @@ function vaultWriteForNode(node: NewMemoryNode, context: AgentContext): NewVault
 
 function titleForNode(node: NewMemoryNode): string {
   const tag = (node.tags ?? []).find((item) => item !== "experience") ?? node.kind;
-  const preview = node.text.replace(/\s+/g, " ").slice(0, 52).replace(/[.。,:，；;!?？！]+$/u, "");
+  const preview = node.text.replace(/\s+/g, " ").slice(0, 52).replace(/[.?:;!?，。？！；]+$/u, "");
   return `${capitalize(node.kind)} - ${capitalize(tag)}${preview ? ` - ${preview}` : ""}`;
 }
 

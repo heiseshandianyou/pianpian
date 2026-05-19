@@ -3,7 +3,7 @@ import { MemoryConsolidationEngine, MemoryStore } from "../index.js";
 
 mkdirSync("data", { recursive: true });
 
-const memory = new MemoryStore("data/pianpian-consolidation-demo.sqlite");
+const memory = new MemoryStore("data/pianpian-consolidation-demo-vault");
 const engine = new MemoryConsolidationEngine(memory);
 
 memory.add({

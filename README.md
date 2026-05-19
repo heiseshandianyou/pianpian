@@ -5,8 +5,8 @@ Pianpian is a TypeScript-first autonomous multi-agent core with durable long-ter
 ## Current Shape
 
 - Autonomous runtime loop: perceive, retrieve memories, compile context, run agents, choose actions, and write new memories.
-- SQLite long-term memory: episodes, semantic facts, goals, preferences, reflections, relationships, and self-model records.
-- Markdown Memory Vault: durable high-value memories can be mirrored into human-readable `.md` files while SQLite keeps the graph index.
+- Markdown-first long-term memory: episodes, semantic facts, goals, preferences, reflections, relationships, and self-model records are stored as readable `.md` files.
+- Markdown graph memory: frontmatter links, wiki links, section structure, and `graph/state.json` provide the activation network.
 - Vault import and sync: Markdown files can be parsed back into memory formation plans, and memory corrections can sync status back to frontmatter.
 - Memory activation graph: recall starts from text, identity continuity, pinned memories, entities, and relation-edge propagation.
 - Context compiler: activated memories are compressed into structured prompt sections for agents.
@@ -14,7 +14,7 @@ Pianpian is a TypeScript-first autonomous multi-agent core with durable long-ter
 - Async memory formation: normal conversation returns quickly while MemoryFormationAgent runs in the background.
 - Synchronous memory commands: explicit requests such as `记住` or `remember this` force memory formation before the reply.
 - Desktop shell: Electron UI for conversation, route, tools, memory stats, and recent memories.
-- Desktop backend sidecar: Electron never loads native SQLite modules directly; it talks to a local Node backend process.
+- Desktop backend sidecar: Electron talks to a local Node backend process that owns the Markdown memory vault.
 - Action/tool loop: safe read-only tools can be proposed, executed, and distilled into memory.
 - Memory correction and inspection: recalled memories can be explained, archived, pinned, reinforced, or downgraded.
 - Active host: internal heartbeat loop for idle autonomy.
@@ -29,7 +29,7 @@ src/
   context/     Context compiler that turns activated memory graphs into prompt sections.
   desktop/     Electron shell, preload bridge, and Node backend sidecar.
   llm/         DeepSeek-compatible LLM provider.
-  memory/      SQLite store, activation engine, consolidation, and inspection.
+  memory/      Markdown-backed store, activation engine, consolidation, and inspection.
   policy/      Action gate and risk review.
   runtime/     Autonomous runtime, heartbeat host, drive system, and intent router.
   tools/       Tool registry, including memory/project/Codex-oriented tools.
@@ -105,7 +105,7 @@ PIANPIAN_NO_LLM=1             Disable configured LLM usage.
 PIANPIAN_MEMORY_LLM=0         Disable LLM memory formation.
 PIANPIAN_COMPANION_LLM=0      Disable LLM companion replies.
 PIANPIAN_SYNC_MEMORY=1        Force all memory formation to run synchronously.
-PIANPIAN_MEMORY_PATH=...      Use a custom SQLite memory path.
+PIANPIAN_MEMORY_PATH=...      Use a custom Markdown memory vault path.
 PIANPIAN_MEMORY_VAULT_PATH=... Use a custom Markdown Memory Vault path.
 ```
 

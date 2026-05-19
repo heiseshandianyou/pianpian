@@ -153,7 +153,7 @@ function printHelp(): void {
 
 function parseArgs(args: string[]): CliOptions {
   let once: string | undefined;
-  let memoryPath = process.env.PIANPIAN_MEMORY_PATH ?? "data/pianpian-memory.sqlite";
+  let memoryPath = process.env.PIANPIAN_MEMORY_PATH ?? "data/memory-vault";
   let useConfiguredLlm = true;
   let verbose = false;
 

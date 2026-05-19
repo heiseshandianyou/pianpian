@@ -19,7 +19,7 @@ Memory should not be modeled as a library of independent categories. It should b
 memory nodes + relational edges + vector space + time + activation dynamics + agent interpretation
 ```
 
-The database stores the substrate. Agents interpret, form, recall, compress, forget, and compile it.
+The Markdown vault stores the substrate. Agents interpret, form, recall, compress, forget, and compile it.
 
 ## 1. Overall Architecture
 
@@ -81,7 +81,7 @@ Each agent can be backed by an LLM call, local rules, or both. The recommended a
 Minimum viable storage:
 
 ```text
-SQLite
+Markdown memory vault
   memories
   memory_edges
   activations
@@ -105,11 +105,11 @@ Event log
   full auditability and replay
 ```
 
-SQLite remains the source of truth at first. Vector and graph stores are indexes, not the canonical memory.
+Markdown is the source of truth. Runtime graph structures and JSON state are indexes that can be rebuilt from readable files.
 
 ## 2. Memory Management
 
-Memory management is the orchestration layer. It is not one database class. It coordinates formation, retrieval, activation, consolidation, forgetting, and context compilation.
+Memory management is the orchestration layer. It is not one storage class. It coordinates formation, retrieval, activation, consolidation, forgetting, and context compilation.
 
 ## 2.1 Responsibilities
 
@@ -432,7 +432,7 @@ This avoids the brittle behavior of deleting random records.
 
 ## 5. Memory Recall
 
-Recall is not database search. Recall is activation.
+Recall is not file search. Recall is activation.
 
 The correct question is:
 
@@ -473,7 +473,7 @@ type RecallQuery = {
 
 Seed nodes come from:
 
-- full-text search,
+- lexical and section-level search,
 - vector search,
 - active goals,
 - recently activated nodes,
@@ -841,9 +841,9 @@ Current implementation status:
 - `MemoryConsolidationEngine` detects exact duplicate active memories.
 - strongest memory is kept; redundant duplicate nodes are archived.
 - consolidation writes `reinforces` and `supersedes` edges for auditability.
-- `consolidation-demo` verifies the flow on an isolated demo database.
+- `consolidation-demo` verifies the flow on an isolated demo vault.
 - `MemoryConsolidationAgent` can consolidate related clusters with LLM support and rule fallback.
-- `llm-consolidation-demo` verifies related-memory consolidation on an isolated database.
+- `llm-consolidation-demo` verifies related-memory consolidation on an isolated demo vault.
 
 ## Phase 5: Autonomous Host
 
@@ -858,7 +858,7 @@ Current implementation status:
 - maintenance now includes scheduled consolidation and forgetting.
 - consolidation runs immediately when the selected drive is `consolidate-memory`.
 - heartbeat results include `drive` and `MaintenanceReport`.
-- `maintenance-demo` verifies idle memory cleanup on an isolated database.
+- `maintenance-demo` verifies idle memory cleanup on an isolated demo vault.
 
 ## Phase 6: Actor Execution Layer
 
@@ -907,7 +907,7 @@ Codex integration status:
 Current implementation status:
 
 - `EntityExtractionAgent` extracts rule-based entities.
-- `MemoryStore` persists `entities` and `memory_entities`.
+- `MemoryStore` persists `entities` and `memory_entities` in Markdown graph state.
 - memory formation automatically includes entity extraction.
 - `entity-demo` verifies entity persistence and memory-entity links.
 
@@ -1047,7 +1047,7 @@ Current implementation status:
 Current implementation status:
 
 - `session-cli` supports interactive mode, stdin mode, and `--once`.
-- default memory path is `data/pianpian-memory.sqlite`.
+- default memory path is `data/memory-vault`.
 - `--memory :memory:` creates a temporary session for testing.
 - `/stats` shows memory counts.
 - `/memories [limit]` shows recent memories.

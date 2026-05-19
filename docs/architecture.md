@@ -67,17 +67,18 @@ This is not the animated pet body yet. It is the first desktop control panel for
 
 - `director`: arbitrates proposals and chooses the next action.
 - `memory-curator`: forms memory nodes and relational edges from experience.
+- `episode-archivist`: turns mature episode clusters into durable Markdown dossiers and archives the source episodes.
 - `self-model`: maintains identity, mission, autonomy level, and safety boundaries.
 - `planner`: turns goals and context into concrete next steps.
 - `reflector`: compresses completed cycles into lessons.
 - `companion`: keeps personality and user-facing continuity.
 - `actor`: future role for real tool execution.
 
-The memory formation role is intentionally an agent rather than a database hook. It decides what the experience means, which stable nodes should exist, and how those nodes relate to the source episode or previous memories.
+The memory formation role is intentionally an agent rather than a storage hook. It decides what the experience means, which stable nodes should exist, and how those nodes relate to the source episode or previous memories.
 
 ## Long-Term Memory
 
-The first storage layer is SQLite because it is local, durable, inspectable, and easy to ship with a desktop app.
+The storage layer is now Markdown-first: readable `.md` files are the durable memory body, while generated JSON state keeps graph metadata such as edges and entity links.
 
 Memory kinds:
 
@@ -97,17 +98,31 @@ The memory model should evolve from flat records into a high-dimensional network
 
 ### Markdown Memory Vault
 
-SQLite remains the graph index, but durable high-value memories can now be mirrored into a Markdown Memory Vault:
+Markdown is the graph source of truth and the runtime index is rebuilt from readable files:
 
 - Markdown files hold human-readable memory bodies, identity notes, relationships, preferences, goals, and reflections.
-- SQLite keeps activation metadata, source provenance, entity links, FTS index, status, confidence, importance, and access counters.
+- Markdown frontmatter keeps activation metadata, source provenance, status, confidence, importance, and access counters.
+- `graph/state.json` keeps relation edges, entities, and memory-entity links.
 - Memory records can point back to Vault documents with `storageKind`, `sourcePath`, and `sourceAnchor`.
 - `MemoryFormationAgent` can propose `vaultWrites`; the runtime applies those writes through the same side-effect path used by synchronous and background memory formation.
 - Context compilation and memory inspection expose source metadata, so a recalled memory can point back to `markdown:path#anchor`.
 - Vault import helpers can parse Markdown frontmatter/body back into `MemoryFormationPlan` objects for rebuild or migration workflows.
 - Memory corrections and forgetting can sync changed status back into Markdown frontmatter through per-memory `memory_states`.
-- A rebuild helper can scan the Vault and repopulate an empty SQLite memory index from Markdown files.
+- A rebuild helper can scan the Vault and repopulate an empty Markdown-backed memory index from Markdown files.
 - The desktop shell includes a read-only Vault page for browsing, searching, and dry-run rebuild previews.
+
+### Episode To Dossier Archiving
+
+`EpisodeArchiveAgent` is the first bridge from raw remembered moments to readable long-term dossiers. It watches active episode memories after memory formation, detects mature clusters, writes a durable Markdown file, creates a pinned semantic node for recall, and archives the source episodes so ordinary recall does not drown in raw logs.
+
+Current archive types:
+
+- relationship dossiers, such as `relationships/卢静涵-林翩翩.md`, for first meeting, rescue, family, and mutual care memories.
+- person dossiers, such as `people/卢静涵.md`, for stable user preferences like listening to pipa.
+- place dossiers, such as `places/扬州.md`, for city, food, history, and map-linked knowledge.
+- literature dossiers, such as `literature/青玉案-元夕.md`, for taught poems, authors, imagery, and personal meaning.
+
+The archive keeps evidence episode IDs inside the Markdown body and adds `reinforces` edges from each source episode to the dossier node. Future archive types should be added as focused rules rather than mixed into generic memory formation.
 
 ## Entity Graph
 

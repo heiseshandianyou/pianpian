@@ -43,7 +43,7 @@ function inferMode(perception: Perception): TaskMode {
 }
 
 function agentsForMode(mode: TaskMode): AgentId[] {
-  const memoryAndCompanion: AgentId[] = ["memory-curator", "companion"];
+  const memoryAndCompanion: AgentId[] = ["memory-curator", "episode-archivist", "companion"];
 
   if (mode === "memory-correction") {
     return ["memory-corrector", "companion"];
@@ -66,7 +66,7 @@ function agentsForMode(mode: TaskMode): AgentId[] {
   }
 
   if (mode === "autonomous-maintenance") {
-    return ["memory-curator", "memory-reviewer", "self-model", "associator", "inner-life", "desire-habit", "proactive-intent", "proactive-scheduler", "tool-planner", "planner", "reflector", "companion"];
+    return ["memory-curator", "memory-reviewer", "episode-archivist", "self-model", "associator", "inner-life", "desire-habit", "proactive-intent", "proactive-scheduler", "tool-planner", "planner", "reflector", "companion"];
   }
 
   return memoryAndCompanion;

@@ -114,12 +114,16 @@ function scoreNode(
   const reasons: string[] = [];
   let score = node.activation;
   const topicScore = topicMatchScore(node, topicTerms);
-  const actionNoise = isActionLog(node) ? 0.45 : 1;
+  const actionNoise = isActionLog(node) ? 0.18 : 1;
   const innerBias = innerStateBias(node, innerState);
 
   if (topicScore > 0) {
     score += topicScore * 1.9;
     reasons.push(`explicit topic match ${topicScore.toFixed(2)}`);
+  }
+  if (isRelationshipOriginMemory(node)) {
+    score += section === "relationship" || section === "topic" ? 1.4 : 0.35;
+    reasons.push("relationship-origin memory");
   }
   if (node.memory.pinned) {
     score += section === "identity" || section === "relationship" ? 0.2 : 0.05;
@@ -130,7 +134,7 @@ function scoreNode(
     reasons.push(`inner-state bias ${innerBias.toFixed(2)}`);
   }
   if (isActionLog(node)) {
-    reasons.push("action-log noise reduced");
+    reasons.push("operational-log noise reduced");
   }
 
   score *= actionNoise;
@@ -156,16 +160,16 @@ function belongsToSection(node: ActivatedMemoryNode, section: WorkingMemorySecti
     return kind === "self_model" || tags.some((tag) => ["identity", "self", "self-model", "name"].includes(tag));
   }
   if (section === "relationship") {
-    return kind === "relationship" || tags.includes("relationship") || tags.includes("user");
+    return kind === "relationship" || tags.includes("relationship") || tags.includes("user") || isRelationshipOriginMemory(node);
   }
   if (section === "goals") {
-    return kind === "goal";
+    return kind === "goal" && !isActionLog(node);
   }
   if (section === "preferences") {
-    return kind === "preference";
+    return kind === "preference" && !isActionLog(node);
   }
   if (section === "procedures") {
-    return kind === "procedure";
+    return kind === "procedure" && !isActionLog(node);
   }
   if (section === "evidence") {
     return kind === "episode" && !isActionLog(node);
@@ -186,6 +190,9 @@ function topicMatchScore(node: ActivatedMemoryNode, topicTerms: string[]): numbe
       continue;
     }
     score += Math.min(1.2, normalized.length / 4);
+  }
+  if (isRelationshipOriginMemory(node)) {
+    score += 1.25;
   }
   return score;
 }
@@ -353,7 +360,36 @@ function dedupeNodes(nodes: ActivatedMemoryNode[]): ActivatedMemoryNode[] {
 }
 
 function isActionLog(node: ActivatedMemoryNode): boolean {
-  return node.memory.text.startsWith("Action executed:") || node.memory.tags.includes("execution");
+  const text = node.memory.text.toLowerCase();
+  const tags = node.memory.tags.map((tag) => tag.toLowerCase());
+  return (
+    text.startsWith("action executed:") ||
+    text.startsWith("cycle ") ||
+    text.startsWith("internal heartbeat:") ||
+    text.includes("learning evaluation:") ||
+    tags.includes("action") ||
+    tags.includes("execution") ||
+    tags.includes("say") ||
+    tags.includes("cycle-evaluation") ||
+    tags.includes("heartbeat") ||
+    (tags.includes("learning") && tags.includes("cycle-evaluation"))
+  );
+}
+
+function isRelationshipOriginMemory(node: ActivatedMemoryNode): boolean {
+  const text = `${node.memory.text} ${node.memory.tags.join(" ")}`.toLowerCase();
+  const tags = new Set(node.memory.tags.map((tag) => tag.toLowerCase()));
+  if (tags.has("relationship-origin")) {
+    return true;
+  }
+
+  const hasPlace = ["河边", "扬州河边", "江边", "水边", "river"].some((term) => text.includes(term));
+  const hasLoss = ["娘刚死", "娘刚走", "母亲刚死", "母亲刚走", "mother died"].some((term) => text.includes(term));
+  const hasCrying = ["哭到夜深", "哭到很晚", "cried late", "cried until late"].some((term) => text.includes(term));
+  const hasRescue = ["捡回来", "带回家", "带回来", "brought me home", "found me"].some((term) =>
+    text.includes(term),
+  );
+  return text.includes("relationship origin") || (hasPlace && hasRescue) || (hasLoss && hasCrying && hasRescue);
 }
 
 function isRecallQuestionEpisode(node: ActivatedMemoryNode): boolean {

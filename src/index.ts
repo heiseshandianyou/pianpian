@@ -11,6 +11,7 @@ export { InnerLifeAgent } from "./agents/inner-life-agent.js";
 export { InnerStateEngine } from "./runtime/inner-state-engine.js";
 export { LearningEvaluatorAgent } from "./agents/learning-evaluator-agent.js";
 export { ExperienceReplayEngine } from "./runtime/experience-replay-engine.js";
+export { EpisodeArchiveAgent } from "./agents/episode-archive-agent.js";
 export { DeepSeekClient, createDefaultDeepSeekClient } from "./llm/deepseek-client.js";
 export { IntentRouter } from "./runtime/intent-router.js";
 export { MemoryActivationEngine } from "./memory/memory-activation-engine.js";

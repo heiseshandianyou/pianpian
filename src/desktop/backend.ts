@@ -11,7 +11,7 @@ import type { HeartbeatResult } from "../runtime/active-agent-host.js";
 import type { RuntimeCycleResult } from "../runtime/autonomous-runtime.js";
 import { parseMarkdown } from "../vault/markdown-memory-vault.js";
 
-const memory = new MemoryStore(process.env.PIANPIAN_MEMORY_PATH ?? "data/pianpian-memory.sqlite");
+const memory = new MemoryStore(process.env.PIANPIAN_MEMORY_PATH ?? "data/memory-vault");
 const vault = new MarkdownMemoryVault(process.env.PIANPIAN_MEMORY_VAULT_PATH ?? "data/memory-vault");
 const vaultRebuildConfirmText = "REBUILD VAULT";
 const maxJsonBodyBytes = 1_000_000;

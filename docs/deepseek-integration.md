@@ -35,7 +35,7 @@ perception + retrieved memories
   -> DeepSeek
   -> memory nodes + memory edges + rationale
   -> schema normalization
-  -> MemoryStore.applyFormation()
+  -> Markdown-backed MemoryStore.applyFormation()
 ```
 
 If DeepSeek is not configured or the call fails, the agent falls back to deterministic rules so local development still works.

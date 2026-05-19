@@ -140,7 +140,9 @@ function collectSuccesses(snapshot: SnapshotInput, metrics: LearningEvaluationMe
     successes.push(`${metrics.executedCount} action(s) executed successfully.`);
   }
 
-  for (const result of snapshot.executionResults.filter((candidate) => candidate.status === "executed").slice(0, 3)) {
+  for (const result of snapshot.executionResults
+    .filter((candidate) => candidate.status === "executed" && candidate.action.type !== "say")
+    .slice(0, 3)) {
     successes.push(`Executed ${actionLabel(result.action)}: ${clip(firstUsefulLine(result.output), 180)}`);
   }
 

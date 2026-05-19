@@ -1,6 +1,6 @@
 import { ActiveAgentHost, AutonomousRuntime, MemoryStore } from "../index.js";
 
-const memory = new MemoryStore("data/pianpian-active-demo.sqlite");
+const memory = new MemoryStore("data/pianpian-active-demo-vault");
 const runtime = new AutonomousRuntime(memory);
 const host = new ActiveAgentHost(runtime, memory, {
   heartbeatMs: 1_000,

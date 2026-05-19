@@ -11,6 +11,7 @@ export class RecallQueryAgent {
       input,
       ...explicitTopicTerms,
       ...expandTopicTerms(explicitTopicTerms),
+      ...relationshipOriginExpansions(input, explicitTopicTerms),
       ...intents.flatMap((intent) => queryExpansions[intent] ?? []),
       ...(innerState ? innerStateExpansion(innerState) : []),
       ...(route ? [route.mode] : []),
@@ -145,6 +146,9 @@ function topicTermScore(term: string): number {
   if (/[\u3400-\u9fff]/.test(term)) {
     score += 2;
   }
+  if (relationshipOriginTerms.includes(term)) {
+    score += 10;
+  }
   if (["扬州", "历史", "美食", "地图", "瘦西湖", "东关街", "大运河", "淮扬菜"].includes(term)) {
     score += 8;
   }
@@ -167,6 +171,32 @@ function expandTopicTerms(terms: string[]): string[] {
     expansions.push("瘦西湖", "东关街", "个园", "何园", "皮市街", "富春", "冶春", "趣园", "静涵", "托付", "城市记忆");
   }
   return expansions;
+}
+
+function relationshipOriginExpansions(input: string, terms: string[]): string[] {
+  const text = `${input} ${terms.join(" ")}`.toLowerCase();
+  if (!containsAny(text, relationshipOriginTriggers)) {
+    return [];
+  }
+
+  return [
+    "第一次相遇",
+    "第一次见面",
+    "在哪里捡回来",
+    "哪里捡回来",
+    "河边",
+    "扬州河边",
+    "娘刚走",
+    "哭到夜深",
+    "捡回来",
+    "带回家",
+    "家人",
+    "静涵",
+    "相遇 河边 捡回来 带回家 家人 静涵",
+    "扬州河边 娘刚走 哭到夜深 捡回来 带回家",
+    "relationship origin river mother died cried late night found me brought me home family",
+    "first meeting Yangzhou river mother died cried brought home Jinghan",
+  ];
 }
 
 const cjkStopChars = new Set("我你他她它们的了呢吗吧啊呀和与在是有还会想请给把让说问");
@@ -208,6 +238,14 @@ const identityTerms = [
 ];
 
 const relationshipTerms = [
+  "第一次相遇",
+  "第一次见面",
+  "相遇",
+  "捡回来",
+  "带回家",
+  "家人",
+  "静涵",
+  "河边",
   "我和你",
   "我们的关系",
   "关系",
@@ -220,6 +258,13 @@ const relationshipTerms = [
 ];
 
 const memoryTerms = [
+  "记得",
+  "还记得",
+  "想起",
+  "回忆",
+  "在哪里",
+  "哪里",
+  "第一次",
   "记忆",
   "记住",
   "想起",
@@ -252,6 +297,9 @@ const queryExpansions: Record<RecallIntent, string[]> = {
     "self model identity name temperament",
   ],
   relationship: [
+    "第一次相遇 河边 扬州河边 娘刚走 哭到夜深 捡回来 带回家 家人 静涵",
+    "相遇 见面 家人 关系 静涵 带回家",
+    "relationship origin river mother died cried late night found brought home family Jinghan",
     "静涵 用户 关系 被认真记住 信任 边界",
     "relationship user name important person",
   ],
@@ -272,12 +320,48 @@ const queryExpansions: Record<RecallIntent, string[]> = {
 
 const tagPriorities: Record<RecallIntent, string[]> = {
   identity: ["identity", "name", "self", "self-model", "temperament"],
-  relationship: ["relationship", "user", "name", "identity"],
+  relationship: ["relationship-origin", "origin", "river", "family", "core", "sensitive", "relationship", "user", "name", "identity"],
   memory: ["memory", "recall", "context", "formation", "inspection"],
   development: ["project", "development", "typescript", "codex", "tool"],
   status: ["project", "status", "memory", "tool"],
   conversation: [],
 };
+
+const relationshipOriginTriggers = [
+  "第一次相遇",
+  "第一次见面",
+  "相遇",
+  "见面",
+  "在哪里捡",
+  "哪里捡",
+  "捡回来",
+  "河边",
+  "扬州河边",
+  "家人",
+  "静涵",
+  "哪里来",
+  "怎么认识",
+  "怎么遇见",
+  "怎么相遇",
+  "从哪里来",
+  "从哪来",
+  "带回家",
+  "带回来",
+];
+
+const relationshipOriginTerms = [
+  "第一次相遇",
+  "第一次见面",
+  "相遇",
+  "河边",
+  "扬州河边",
+  "娘刚走",
+  "哭到夜深",
+  "捡回来",
+  "带回家",
+  "家人",
+  "静涵",
+];
 
 const kindPriorities: Record<RecallIntent, MemoryKind[]> = {
   identity: ["self_model", "relationship"],

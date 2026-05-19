@@ -38,7 +38,7 @@ try {
   });
 
   const rebuild = await rebuildMarkdownVaultIndex(vault, memory, {
-    rationale: "Demo: rebuild an empty SQLite MemoryStore from Markdown vault files.",
+    rationale: "Demo: rebuild an empty Markdown MemoryStore from Markdown vault files.",
   });
   const dryRunSecondRebuild = await rebuildMarkdownVaultIndex(vault, memory, {
     dryRun: true,

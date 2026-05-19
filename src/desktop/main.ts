@@ -658,7 +658,7 @@ function renderHtml(): string {
         <div class="title-row">
           <div>
             <p class="eyebrow">Lin Pianpian</p>
-            <h1>&#26519;&#32793;&#32793;</h1>
+            <h1>&#26519;&#32745;&#32745;</h1>
             <p class="subtitle">&#22312;&#36825;&#37324;&#35828;&#35805;&#65292;&#20063;&#22312;&#36825;&#37324;&#35760;&#20303;&#12290;</p>
           </div>
           <nav class="nav" aria-label="Pages">
@@ -681,7 +681,7 @@ function renderHtml(): string {
             <div class="message agent">&#25105;&#22312;&#12290;</div>
           </div>
           <form class="composer" id="form">
-            <textarea id="input" placeholder="&#21644;&#32793;&#32793;&#35828;&#35805;..." autofocus></textarea>
+            <textarea id="input" placeholder="&#21644;&#32745;&#32745;&#35828;&#35805;..." autofocus></textarea>
             <button id="send" type="submit">&#21457;&#36865;</button>
           </form>
         </section>
@@ -956,7 +956,7 @@ function renderHtml(): string {
     async function rebuildVaultIndex() {
       const requiredText = "REBUILD VAULT";
       const confirmText = window.prompt(
-        "This will import Markdown vault memories into MemoryStore. Type " + requiredText + " to continue.",
+        "This will rebuild the Markdown memory graph from vault files. Type " + requiredText + " to continue.",
       );
       if (confirmText === null) {
         renderVaultSummary("rebuild cancelled", "No changes were written.");

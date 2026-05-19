@@ -19,11 +19,15 @@
     "memory-correction-demo": "npm run build && node dist/demos/memory-correction-demo.js",
     "memory-inspector-demo": "npm run build && node dist/demos/memory-inspector-demo.js",
     "memory-inspector-tool-demo": "npm run build && node dist/demos/memory-inspector-tool-demo.js",
+    "markdown-graph-memory-demo": "npm run build && node dist/demos/markdown-graph-memory-demo.js",
+    "episode-archive-demo": "npm run build && node dist/demos/episode-archive-demo.js",
+    "episode-archive-types-demo": "npm run build && node dist/demos/episode-archive-types-demo.js",
     "markdown-memory-vault-demo": "npm run build && node dist/demos/markdown-memory-vault-demo.js",
     "vault-import-demo": "npm run build && node dist/demos/vault-import-demo.js",
     "vault-frontmatter-demo": "npm run build && node dist/demos/vault-frontmatter-demo.js",
     "vault-rebuild-demo": "npm run build && node dist/demos/vault-rebuild-demo.js",
     "vault-correction-sync-demo": "npm run build && node dist/demos/vault-correction-sync-demo.js",
+    "relationship-origin-recall-demo": "npm run build && node dist/demos/relationship-origin-recall-demo.js",
     "maintenance-demo": "npm run build && node dist/demos/maintenance-demo.js",
     "self-model-demo": "npm run build && node dist/demos/self-model-demo.js",
     "policy-demo": "npm run build && node dist/demos/policy-demo.js",
@@ -31,14 +35,12 @@
     "tool-demo": "npm run build && node dist/demos/tool-demo.js",
     "tool-loop-demo": "npm run build && node dist/demos/tool-loop-demo.js",
     "codex-tool-demo": "npm run build && node dist/demos/codex-tool-demo.js",
-    "train:yangzhou": "npm run build && node dist/training/yangzhou-training.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "better-sqlite3": "^12.10.0",
     "electron": "^41.6.0"
   },
   "devDependencies": {

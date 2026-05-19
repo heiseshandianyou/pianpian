@@ -3,6 +3,7 @@ import { AutonomousAssociationAgent } from "../agents/autonomous-association-age
 import { CompanionAgent } from "../agents/companion-agent.js";
 import { DesireHabitAgent } from "../agents/desire-habit-agent.js";
 import { DirectorAgent } from "../agents/director-agent.js";
+import { EpisodeArchiveAgent } from "../agents/episode-archive-agent.js";
 import { InnerLifeAgent } from "../agents/inner-life-agent.js";
 import { LearningEvaluatorAgent } from "../agents/learning-evaluator-agent.js";
 import { MemoryCorrectionAgent } from "../agents/memory-correction-agent.js";
@@ -139,6 +140,7 @@ export class AutonomousRuntime {
       [
         new MemoryFormationAgent(memoryFormationLlm),
         new MemoryReviewAgent(),
+        new EpisodeArchiveAgent(),
         new MemoryCorrectionAgent(),
         new SelfModelAgent(),
         new PolicyAgent(),
@@ -265,11 +267,14 @@ export class AutonomousRuntime {
       if (result.status !== "executed") {
         continue;
       }
+      if (result.action.type === "say") {
+        continue;
+      }
 
       const executionMemory = this.memory.add({
         kind: "episode",
         text: `Action executed: ${formatActionLabel(result.action)}. Output: ${result.output}`,
-        importance: result.action.type === "say" ? 1 : 2,
+        importance: 2,
         confidence: 1,
         tags: ["action", "execution", result.action.type, ...actionTags(result.action)],
       });

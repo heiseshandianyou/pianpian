@@ -2,6 +2,7 @@ export type AgentId =
   | "director"
   | "memory-curator"
   | "memory-reviewer"
+  | "episode-archivist"
   | "memory-corrector"
   | "self-model"
   | "policy"
@@ -28,7 +29,7 @@ export type MemoryKind =
   | "procedure"
   | "relationship";
 export type MemoryStatus = "active" | "archived";
-export type MemoryStorageKind = "sqlite" | "markdown";
+export type MemoryStorageKind = "markdown";
 export type MemoryRelation =
   | "supports"
   | "contradicts"

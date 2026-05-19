@@ -5,6 +5,11 @@ export {
   renderMarkdown,
 } from "./markdown-memory-vault.js";
 export {
+  createMarkdownGraphMemoryCore,
+  MarkdownGraphMemory,
+  MarkdownGraphMemoryCore,
+} from "./markdown-graph-memory.js";
+export {
   annotateFormationWithVaultSources,
   normalizeVaultSourcePath,
   syncVaultMemoryFrontmatter,
@@ -20,6 +25,26 @@ export {
   suggestMemoryImportsFromMarkdown,
   suggestMemoryImportsFromVaultPath,
 } from "./vault-import.js";
+export type {
+  MarkdownGraphActivatedNode,
+  MarkdownGraphActivationTrace,
+  MarkdownGraphActivatedSection,
+  MarkdownGraphCompileOptions,
+  MarkdownGraphEdge,
+  MarkdownGraphEdgeRelation,
+  MarkdownGraphEdgeSource,
+  MarkdownGraphMemoryCoreOptions,
+  MarkdownGraphMemoryCoreRecallResult,
+  MarkdownGraphNode,
+  MarkdownGraphNodeKind,
+  MarkdownGraphRecallOptions,
+  MarkdownGraphRecallQuery,
+  MarkdownGraphRecallResult,
+  MarkdownGraphSection,
+  MarkdownGraphUnresolvedLink,
+  MarkdownMemoryGraph,
+  MarkdownWikiLink,
+} from "./markdown-graph-memory.js";
 export type {
   MarkdownFrontmatter,
   MarkdownFrontmatterValue,

@@ -1,6 +1,6 @@
 import { MemoryConsolidationEngine, MemoryStore } from "../index.js";
 
-const memory = new MemoryStore("data/pianpian-llm-consolidation-demo.sqlite");
+const memory = new MemoryStore("data/pianpian-llm-consolidation-demo-vault");
 const engine = new MemoryConsolidationEngine(memory, {
   relatedClusterMinSize: 3,
   relatedClusterLimit: 1,

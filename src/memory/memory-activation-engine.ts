@@ -32,9 +32,12 @@ export class MemoryActivationEngine {
     };
 
     const recallText = [query.rawInput, ...query.expandedQueries].join(" ");
+    const includeOperationalLogs = isOperationalLogQuery(recallText);
     const textSeeds = dedupeMemories(
       query.expandedQueries.flatMap((expandedQuery) => this.memory.retrieve(expandedQuery, query.seedLimit)),
-    ).slice(0, query.seedLimit * 2);
+    )
+      .filter((memory) => includeOperationalLogs || !isOperationalLogMemory(memory))
+      .slice(0, query.seedLimit * 2);
     const topicSeeds =
       query.explicitTopicTerms.length > 0
         ? this.memory
@@ -44,6 +47,7 @@ export class MemoryActivationEngine {
               score: memoryTopicMatchScore(memory, [...query.explicitTopicTerms, ...query.expandedQueries]),
             }))
             .filter((item) => item.score > 0)
+            .filter((item) => includeOperationalLogs || !isOperationalLogMemory(item.memory))
             .sort((left, right) => right.score - left.score)
             .map((item) => item.memory)
             .slice(0, query.seedLimit * 2)
@@ -51,8 +55,15 @@ export class MemoryActivationEngine {
     const prioritySeeds =
       query.priorityTags.length > 0 || query.priorityKinds.length > 0
         ? this.memory
-            .listActive(500)
+            .listActive(700)
             .filter((memory) => memoryMatchesPriority(memory, query.priorityTags, query.priorityKinds))
+            .filter((memory) => includeOperationalLogs || !isOperationalLogMemory(memory))
+            .map((memory) => ({
+              memory,
+              score: prioritySeedScore(memory, query),
+            }))
+            .sort((left, right) => right.score - left.score)
+            .map((item) => item.memory)
             .slice(0, Math.max(4, query.seedLimit))
         : [];
     const identitySeeds = isIdentityQuery(recallText)
@@ -66,7 +77,7 @@ export class MemoryActivationEngine {
     const entitySeeds = this.memory.listActiveMemoriesForEntityIds(
       matchedEntities.map((entity) => entity.id),
       query.entitySeedLimit,
-    );
+    ).filter((memory) => includeOperationalLogs || !isOperationalLogMemory(memory));
     const entityLinks = this.memory.listMemoryEntityLinksForEntityIds(
       matchedEntities.map((entity) => entity.id),
     );
@@ -213,14 +224,15 @@ export class MemoryActivationEngine {
     }
 
     const ranked = [...activation.values()]
-      .sort((left, right) => right.activation - left.activation)
+      .sort((left, right) => effectiveActivation(right, includeOperationalLogs) - effectiveActivation(left, includeOperationalLogs))
       .slice(0, query.maxNodes);
+    const focusNodes = selectFocusNodes(ranked, includeOperationalLogs);
 
     return {
       query,
       entityNodes: buildEntityNodes(matchedEntities, linkedMemoryIdsByEntity, activation),
-      focusNodes: ranked.slice(0, Math.min(6, ranked.length)),
-      supportNodes: ranked.slice(6),
+      focusNodes,
+      supportNodes: ranked.filter((node) => !focusNodes.some((focus) => focus.memory.id === node.memory.id)),
       contradictionNodes: ranked.filter((node) =>
         node.reasons.some((reason) => reason.includes("contradicts")),
       ),
@@ -247,6 +259,20 @@ function memoryMatchesPriority(memory: MemoryRecord, tags: string[], kinds: Memo
   );
 }
 
+function prioritySeedScore(memory: MemoryRecord, query: RecallQuery): number {
+  const normalizedTags = new Set(query.priorityTags.map((tag) => tag.toLowerCase()));
+  const tagScore = memory.tags.reduce(
+    (score, tag) => score + (normalizedTags.has(tag.toLowerCase()) ? 1.6 : 0),
+    0,
+  );
+  const kindScore = query.priorityKinds.includes(memory.kind) ? 1.2 : 0;
+  const topicScore = memoryTopicMatchScore(memory, [...query.explicitTopicTerms, ...query.expandedQueries]);
+  const originScore = isRelationshipOriginMemory(memory) ? 5 : 0;
+  const pinnedScore = memory.pinned ? 0.8 : 0;
+  const operationalPenalty = isOperationalLogMemory(memory) ? -5 : 0;
+  return tagScore + kindScore + topicScore + originScore + pinnedScore + operationalPenalty + memory.importance / 5;
+}
+
 function memoryTopicMatchScore(memory: MemoryRecord, topicTerms: string[]): number {
   const text = `${memory.text} ${memory.tags.join(" ")}`.toLowerCase();
   let score = 0;
@@ -255,6 +281,12 @@ function memoryTopicMatchScore(memory: MemoryRecord, topicTerms: string[]): numb
     if (normalized.length >= 2 && text.includes(normalized)) {
       score += Math.min(3, normalized.length / 2);
     }
+  }
+  if (isRelationshipOriginMemory(memory)) {
+    score += 2.4;
+  }
+  if (isOperationalLogMemory(memory)) {
+    score *= 0.2;
   }
   return score;
 }
@@ -287,7 +319,74 @@ function seedActivation(memory: MemoryRecord): number {
   const confidence = memory.confidence;
   const reuse = Math.min(memory.accessCount / 10, 1);
   const pinnedBoost = memory.pinned ? 0.12 : 0;
-  return clamp01(0.45 * importance + 0.35 * confidence + 0.2 * reuse + pinnedBoost);
+  const noisePenalty = isOperationalLogMemory(memory) ? 0.28 : 1;
+  const relationshipOriginBoost = isRelationshipOriginMemory(memory) ? 0.12 : 0;
+  return clamp01((0.45 * importance + 0.35 * confidence + 0.2 * reuse + pinnedBoost + relationshipOriginBoost) * noisePenalty);
+}
+
+function effectiveActivation(node: ActivatedMemoryNode, includeOperationalLogs: boolean): number {
+  if (includeOperationalLogs || !isOperationalLogMemory(node.memory)) {
+    return node.activation;
+  }
+  return node.activation * 0.25;
+}
+
+function selectFocusNodes(nodes: ActivatedMemoryNode[], includeOperationalLogs: boolean): ActivatedMemoryNode[] {
+  const limit = Math.min(6, nodes.length);
+  if (includeOperationalLogs) {
+    return nodes.slice(0, limit);
+  }
+
+  const nonOperational = nodes.filter((node) => !isOperationalLogMemory(node.memory)).slice(0, limit);
+  return nonOperational.length > 0 ? nonOperational : nodes.slice(0, limit);
+}
+
+function isOperationalLogQuery(input: string): boolean {
+  const normalized = input.toLowerCase();
+  return [
+    "tool execution",
+    "execution result",
+    "action executed",
+    "latest tool",
+    "memory.stats",
+    "project.status",
+    "工具执行",
+    "执行结果",
+    "动作日志",
+  ].some((term) => normalized.includes(term));
+}
+
+function isOperationalLogMemory(memory: MemoryRecord): boolean {
+  const text = memory.text.toLowerCase();
+  const tags = memory.tags.map((tag) => tag.toLowerCase());
+  return (
+    text.startsWith("action executed:") ||
+    text.startsWith("cycle ") ||
+    text.startsWith("internal heartbeat:") ||
+    text.includes("learning evaluation:") ||
+    tags.includes("action") ||
+    tags.includes("execution") ||
+    tags.includes("say") ||
+    tags.includes("cycle-evaluation") ||
+    tags.includes("heartbeat") ||
+    (tags.includes("learning") && tags.includes("cycle-evaluation"))
+  );
+}
+
+function isRelationshipOriginMemory(memory: MemoryRecord): boolean {
+  const text = `${memory.text} ${memory.tags.join(" ")}`.toLowerCase();
+  const tags = new Set(memory.tags.map((tag) => tag.toLowerCase()));
+  if (tags.has("relationship-origin")) {
+    return true;
+  }
+
+  const hasPlace = ["河边", "扬州河边", "江边", "水边", "river"].some((term) => text.includes(term));
+  const hasLoss = ["娘刚死", "娘刚走", "母亲刚死", "母亲刚走", "mother died"].some((term) => text.includes(term));
+  const hasCrying = ["哭到夜深", "哭到很晚", "cried late", "cried until late"].some((term) => text.includes(term));
+  const hasRescue = ["捡回来", "带回家", "带回来", "brought me home", "found me"].some((term) =>
+    text.includes(term),
+  );
+  return text.includes("relationship origin") || (hasPlace && hasRescue) || (hasLoss && hasCrying && hasRescue);
 }
 
 function buildEntityNodes(

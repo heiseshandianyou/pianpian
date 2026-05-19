@@ -70,7 +70,7 @@ const plan: MemoryFormationPlan = {
       kind: "preference",
     },
   ],
-  rationale: "Verify Markdown MemoryVault source provenance through write, SQLite graph, recall, and context.",
+  rationale: "Verify Markdown MemoryVault source provenance through write, Markdown graph, recall, and context.",
 };
 
 try {
@@ -101,7 +101,7 @@ try {
   pass(Boolean(vaultEntry?.markdown.includes(memoryText)), "contains memory text");
   pass(Boolean(vaultEntry?.markdown.includes(sourceAnchor)), `contains anchor=${sourceAnchor}`);
 
-  printSection("sqlite graph node");
+  printSection("markdown graph node");
   pass(record.storageKind === "markdown", `storageKind=${record.storageKind}`);
   pass(record.sourcePath === sourcePath, `sourcePath=${record.sourcePath ?? "none"}`);
   pass(record.sourceAnchor === sourceAnchor, `sourceAnchor=${record.sourceAnchor ?? "none"}`);
